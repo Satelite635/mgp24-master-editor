@@ -1,0 +1,18 @@
+const {JSDOM}=require("jsdom");const fs=require("fs");
+const html=fs.readFileSync("/home/claude/mgp_editor/webui.html","utf8");const calls=[];
+const dom=new JSDOM(html,{runScripts:"dangerously",pretendToBeVisual:true,url:"http://127.0.0.1:8765/",beforeParse(w){
+ w.HTMLDialogElement.prototype.showModal=function(){this.open=true};w.HTMLDialogElement.prototype.close=function(){this.open=false};
+ w.TOKEN="t";
+ w.fetch=async(p,o)=>{calls.push(p+(o&&o.body?" "+o.body:""));const j=x=>({ok:true,status:200,json:async()=>x});
+  if(p.startsWith("/api/state"))return j({open:true,mod_folder:"x",paks_dir:"",include_patch:true,paks:true});
+  if(p.startsWith("/api/pak/status"))return j({running:false,lines:["Done"],next:1,result:{path:"X",files:1,bytes:1},error:null});
+  if(p.startsWith("/api/pak"))return j(JSON.parse(o.body).overwrite?{started:true}:{exists:true,path:"D:/Paks/My_P.pak"});
+  return j({files:[],changes:[]})};
+ w.addEventListener("error",e=>console.log("PAGE ERROR:",e.message));}});
+const w=dom.window;
+setTimeout(async()=>{const d=w.document,s=ms=>new Promise(r=>setTimeout(r,ms));
+ w.eval('ST.open=true;dirtyN=0;pkBusy=false');d.querySelector("#b_pack").disabled=false;d.querySelector("#b_pack").click();await s(100);
+ d.querySelector("#pk_name").value="My";[...d.querySelectorAll("dialog button")].find(b=>b.textContent==="Pack").click();await s(300);
+ const dl=d.querySelector("dialog");console.log("open:",dl.open,"|",dl.textContent.slice(0,60));
+ [...dl.querySelectorAll("button")].find(b=>b.textContent==="Replace").click();await s(300);
+ console.log("closed:",!dl.open,"| pak calls:",calls.filter(c=>c.startsWith("/api/pak ")).map(c=>c.slice(-60)));process.exit(0)},300);

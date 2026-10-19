@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MGP24 Master Editor</title>
+<style>
+:root{--bg:#14161a;--panel:#1c1f26;--line:#2c313b;--text:#e6e8ec;--dim:#8d95a3;--acc:#ff5a1f;--ok:#3ecf8e;--bad:#ff5d5d;--warn:#f5b942;--mono:ui-monospace,Consolas,Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,sans-serif;height:100vh;display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:0 20px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:15px;margin:0;padding:12px 0;letter-spacing:.3px}header h1 b{color:var(--acc)}
+nav button{background:none;border:0;color:var(--dim);padding:14px 12px;cursor:pointer;font:inherit;border-bottom:2px solid transparent}
+nav button.on{color:var(--text);border-color:var(--acc)}
+#savebar{display:flex;gap:8px;align-items:center;flex:none;padding:6px 0;margin-left:auto}#savebar button,#savebar .tag{white-space:nowrap}#dirty.on{background:#4a3a14;color:var(--warn)}
+.tag.warn{color:var(--warn)}
+nav{display:flex;white-space:nowrap}header h1{white-space:nowrap}#where{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;margin-left:auto;color:var(--dim);font-size:12px;font-family:var(--mono)}
+main{flex:1;min-height:0;display:flex}
+section{display:none;flex:1;min-width:0}section.on{display:flex}
+.side{width:270px;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.side input{margin:10px;padding:7px 9px}
+#grp{display:flex;margin:10px 10px 0;border:1px solid var(--line);border-radius:5px;overflow:hidden}#grp button{flex:1;background:none;border:0;color:var(--dim);padding:6px;cursor:pointer;font:inherit}#grp button.on{background:var(--acc);color:#fff}
+.list{overflow:auto;flex:1}
+.list div{padding:6px 14px;cursor:pointer;border-left:3px solid transparent;display:flex;justify-content:space-between;gap:8px}
+.list div:hover{background:#232730}.list div.on{background:#262b35;border-color:var(--acc)}
+.list small{color:var(--dim)}
+.pane{flex:1;min-width:0;overflow:auto;padding:18px 22px}
+input,select,textarea{background:#101216;border:1px solid var(--line);color:var(--text);border-radius:5px;font:inherit}
+input:focus,select:focus{outline:1px solid var(--acc)}
+button.b{background:#272c36;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:6px 12px;cursor:pointer;font:inherit}
+button.b:hover{border-color:var(--acc)}button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+button.b:disabled{opacity:.4;cursor:default}
+h2{margin:0 0 4px;font-size:18px}.sub{color:var(--dim);margin-bottom:14px;font-family:var(--mono);font-size:12px;word-break:break-all}
+.bar{display:flex;gap:8px;margin:12px 0;flex-wrap:wrap;align-items:center}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);font-weight:500;font-size:12px;position:sticky;top:0;background:var(--bg)}
+td.mono,.mono{font-family:var(--mono);font-size:12px;word-break:break-all}
+.tag{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;background:#2a2f39;color:var(--dim)}
+.tag.ok{color:var(--ok)}.tag.bad{color:var(--bad);background:#3a2226}
+.cat{margin:18px 0 6px;color:var(--acc);font-size:12px;text-transform:uppercase;letter-spacing:1px}
+.grid{overflow:auto;flex:1;min-height:0}
+.grid td{padding:0;max-width:340px}
+.grid td>div{padding:5px 10px;min-height:28px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:text}
+.grid td:hover{background:#232730}.grid td.ro>div{color:var(--dim);cursor:default}
+.grid td input{width:100%;border-radius:0;padding:5px 10px;border:0;outline:2px solid var(--acc)}
+.grid td.ok{background:#18382b}.grid td.err{background:#3a2226}
+.grid-head{display:flex;gap:10px;padding:12px 18px;align-items:center;border-bottom:1px solid var(--line)}
+#toast{position:fixed;right:16px;bottom:16px;max-width:520px;display:flex;flex-direction:column;gap:8px;z-index:9}
+#toast div{background:#2a2f39;border-left:4px solid var(--acc);padding:10px 14px;border-radius:5px;white-space:pre-wrap;word-break:break-word}
+#toast .task{display:flex;align-items:center;gap:10px;min-width:340px;white-space:nowrap}#toast .task .ln{flex:1;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono);font-size:12px;color:var(--dim)}#toast .task b{font-weight:600}#toast .task a{cursor:pointer;color:var(--text);text-decoration:underline}#toast .task .x{cursor:pointer;opacity:.6}
+@keyframes spin{to{transform:rotate(360deg)}}.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--dim);border-top-color:var(--acc);border-radius:50%;animation:spin .8s linear infinite}
+#pk_log{max-height:55vh;overflow:auto;background:#12151a;border:1px solid var(--line);border-radius:5px;padding:8px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;margin:8px 0 0}
+#toast .bad{border-color:var(--bad)}#toast .ok{border-color:var(--ok)}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:20px;width:min(720px,94vw)}
+dialog::backdrop{background:#0009}
+dialog h3{margin:0 0 10px}dialog .row{display:flex;gap:8px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap}
+dialog input[type=text]{width:100%;padding:8px}
+#br_path a,#br_out a,.pick a{color:var(--text);text-decoration:none}#br_path a:hover,#br_out a:hover,.pick a:hover{text-decoration:underline}
+.pick{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:5px;margin-top:8px}
+.pick div{padding:4px 10px;cursor:pointer;font-family:var(--mono);font-size:12px}.pick div:hover{background:#262b35}
+.pick small{display:block;padding:4px 10px;color:var(--dim);background:#181b21}
+.form{max-width:640px}.pathrow{display:flex;gap:6px}.pathrow input{flex:1;min-width:0}.pathrow .b{white-space:nowrap}.form label{display:block;margin:14px 0 4px;color:var(--dim);font-size:12px}
+.form input[type=text],.form input[type=password]{width:100%;padding:8px}
+.empty{color:var(--dim);padding:40px;text-align:center}
+.help{color:var(--dim);font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1><b>MGP24</b> Master Editor <small id="ver" style="font-size:11px;opacity:.6;font-weight:400"></small></h1>
+  <nav><button data-t="riders" class="on">Riders &amp; bindings</button><button data-t="check">Check</button><button data-t="audio">Port audio</button><button data-t="browse">Browse</button><button data-t="hud">HUD skin</button><button data-t="sheet">Replacement sheet</button><button data-t="loc">Localization</button><button data-t="db">Database</button><button data-t="setup">Setup</button></nav>
+  <div id="where"></div>
+  <div id="savebar"><span id="dirty" class="tag"></span>
+    <button class="b p" id="b_save" disabled>Save</button><button class="b" id="b_pack" disabled title="Save your changes first to enable">Pack mod</button><button class="b" id="b_launch" disabled title="Set the game path in Setup">Launch game</button><button class="b" id="b_disc" disabled>Discard</button><button class="b" id="b_exit">Exit</button></div>
+</header>
+<main>
+  <section id="riders" class="on">
+    <div class="side"><div id="grp"><button data-g="official" class="on">Official</button><button data-g="custom">Custom</button><button data-g="teams">Teams</button></div>
+      <input id="rsearch" placeholder="Search…" autocomplete="off"><div class="list" id="rlist"></div></div>
+    <div class="pane" id="rpane"><div class="empty">Open a project in Setup first.</div></div>
+  </section>
+  <section id="audio">
+    <div class="pane">
+      <h2>Port bike audio from another game</h2>
+      <div class="help" style="margin:0 0 10px">Point this at the other game's extracted <span class="mono">Audio</span> folder (the one containing <span class="mono">Bindings</span>, <span class="mono">Events</span>, <span class="mono">Banks</span> and <span class="mono">WwiseAudio</span>). It copies the bank, events, bank asset and BikeAudio asset, converted to this game's layout, and adds missing Init.bnk objects. Nothing is written until Port; files are staged like other edits (Save to apply). Afterwards use Replace on a rider's audio row and paste the new BikeAudio path shown below.</div>
+      <div class="bar"><input id="au_root" placeholder="C:\\path\\to\\gp22\\Audio" style="flex:1;padding:7px"><button class="b" data-pick="au_root" data-kind="folder">Browse</button><button class="b" data-reveal="au_root">Open in Explorer</button><button class="b p" id="au_scan">Scan</button><span id="au_sum" class="tag"></span></div>
+      <div id="au_out"></div>
+      <div class="bar" id="au_bar" style="display:none"><label class="help" title="Added to the top-level Volume of each ported bank. GP24 banks run ~+3..+9 dB hotter than SBK ones.">Gain dB <input id="au_gain" type="number" step="1" value="0" style="width:60px;padding:5px"></label><button class="b" id="au_check">Check</button><button class="b p" id="au_go">Port selected</button></div>
+      <div id="au_res"></div>
+    </div>
+  </section>
+  <section id="hud">
+    <div class="pane">
+      <h2>HUD skin</h2>
+      <div class="help" style="margin:0 0 10px">Copy the look (colours, fonts, shadows, images) of another game's widget onto the game's own widget, keeping the game's layout and logic. Put the other game's extracted widget (<code>.uasset</code> + <code>.uexp</code>, same file name) in a folder, pick the game's widget below, and compare. Only values the target can take as they are get copied; items marked "needs import" use a font or image the game's widget doesn't reference yet.</div>
+      <div class="bar pathrow"><input type="text" id="hu_src" placeholder="folder with the other game's extracted files (e.g. the SBK HUD folder)"><button class="b" id="hu_pick">Browse</button></div>
+      <h3 style="margin:14px 0 4px">Import whole files</h3>
+      <div class="help" style="margin:0 0 8px">Copies the other game's widget files into your mod folder, replacing the game's own, exactly like swapping the files by hand. Keep the folders from <code>Content/</code> down, or use the original file names: they are placed where the game's file of that name lives. Staged until you Save. <b>Penalty/warning widgets</b> are marked: they depend on game logic and can show wrongly when taken from another game. <b>Font files</b> (<code>ui/Fonts</code>) are never imported: another game's font assets crash this one.</div>
+      <div class="bar"><button class="b p" id="hi_scan">Scan folder</button><button class="b" id="hi_mod" title="Lists assets in your mod folder that need game code GP24 lacks (the cause of SuperStruct crashes)">Check my mod for crashes</button><button class="b" id="hi_all">Select all</button><button class="b" id="hi_none">Select none</button><button class="b" id="hi_nowarn" title="Unticks penalty, warning and long-lap widgets (they depend on game logic)">Untick penalty / warning</button><button class="b p" id="hi_go" style="display:none">Import selected</button><span id="hi_sum" class="tag"></span></div>
+      <div id="hi_out"></div>
+      <h3 style="margin:18px 0 4px">Skin only (keep the game's own widget)</h3>
+      <div class="bar"><input id="hu_find" placeholder="find widget (e.g. HUDLeaderboard)" value="HUD" style="padding:7px;width:220px"><select id="hu_target" style="padding:7px;flex:1;min-width:0"></select></div>
+      <div class="bar"><button class="b p" id="hu_go">Compare</button></div>
+      <div id="hu_sum" class="tag" style="margin:6px 0"></div>
+      <div class="bar" id="hu_bar" style="display:none">
+        <label class="tag"><input type="checkbox" class="hg" data-g="color" checked> colours</label>
+        <label class="tag"><input type="checkbox" class="hg" data-g="font" checked> fonts</label>
+        <label class="tag"><input type="checkbox" class="hg" data-g="shadow" checked> shadow/outline</label>
+        <label class="tag"><input type="checkbox" class="hg" data-g="image" checked> images</label>
+        <label class="tag"><input type="checkbox" class="hg" data-g="layout"> sizes/margins</label>
+        <label class="tag"><input type="checkbox" class="hg" data-g="other" checked> other</label>
+        <button class="b p" id="hu_apply">Apply selected</button></div>
+      <div class="bar"><button class="b" id="hu_vis">Show / hide widgets in this page</button><span class="help">e.g. hide PenaltyTime in RaceHud_BP</span><button class="b" id="hu_swap">Swap stewards box / jump-start &amp; long-lap positions</button><button class="b" id="hu_graft">Use GP24's penalty widget (RaceHud_BP)</button></div>
+      <div id="hu_visout"></div>
+      <div class="bar"><button class="b" id="fn_scan">Replace fonts with TT Supermolot</button><span class="help">needs the FF_TTSupermolotNeue-* font files in Content/assets/ui/Fonts</span></div>
+      <div id="fn_out"></div>
+      <div id="hu_out"></div>
+    </div>
+  </section>
+  <section id="sheet">
+    <div class="pane">
+      <h2>Replacement sheet</h2>
+      <div class="help" style="margin:0 0 10px">Every rider, team, bike and track of the base game. Type who/what each becomes in your mod (and a note); it autosaves to <code>_mgp_replacement_sheet.json</code> in the mod folder (not packed). "DB changes" shows what your mod's database already differs on.</div>
+      <div class="bar"><select id="sh_kind" style="padding:7px"><option value="riders">Riders</option><option value="teams">Teams</option><option value="bikes">Bikes</option><option value="tracks">Tracks</option></select><input id="sh_q" placeholder="filter" style="flex:1;padding:7px"><label class="tag"><input type="checkbox" id="sh_only"> only filled / changed</label><button class="b" id="sh_csv">Export CSV</button><button class="b" id="sh_imp">Import CSV / save</button><button class="b p" id="sh_fill" style="display:none" title="Fill every empty Replaced-with cell from your mod localization">Fill from mod</button><input type="file" id="sh_file" accept=".csv,.json" style="display:none"><select id="sh_loc" style="padding:7px;max-width:30%" title="localization file used for display names"></select><span id="sh_sum" class="tag"></span></div>
+      <div id="sh_out"></div>
+    </div>
+  </section>
+  <section id="loc">
+    <div class="pane">
+      <h2>Localization (.locres)</h2>
+      <div class="help" style="margin:0 0 10px">Edit the game's texts (menus, names, messages). Pick a file, search, change a text and press Enter or click away; it is staged like other edits (Save writes it to the mod folder). Only existing entries can be edited. The file's own paks are never touched.</div>
+      <div class="bar"><select id="lo_file" style="padding:7px;max-width:60%"></select><input id="lo_q" placeholder="search namespace, key or text" style="flex:1;padding:7px"><button class="b p" id="lo_go">Search</button><span id="lo_sum" class="tag"></span></div>
+      <div id="lo_out"></div>
+      <div class="bar" id="lo_more" style="display:none"><button class="b" id="lo_prev">‹</button><button class="b" id="lo_next">›</button></div>
+    </div>
+  </section>
+  <section id="browse">
+    <div class="pane">
+      <h2>Browse game files</h2>
+      <div class="help" style="margin:0 0 10px">Everything in the paks and your mod folder. Click a folder to open it; search looks inside the current folder and below. <b>Edit</b> opens an asset in UAssetGUI (a copy is staged first), <b>Clone</b> copies a data asset under a new name in the same folder, <b>Extract</b> copies the files straight into your mod folder (no Save needed).</div>
+      <div class="bar"><span id="br_path" class="mono"></span></div>
+      <div class="bar"><input id="br_q" placeholder="search in this folder and below" style="flex:1;padding:7px"><button class="b p" id="br_go">Search</button><button class="b" id="br_ref" title="re-read the file list">Refresh</button><span id="br_sum" class="tag"></span></div>
+      <div id="br_out"></div>
+    </div>
+  </section>
+  <section id="db">
+    <div class="side"><input id="tsearch" placeholder="Search table…" autocomplete="off"><div class="list" id="tlist"></div></div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div class="grid-head"><b id="tname">—</b><span class="tag" id="tcount"></span>
+        <input id="qsearch" placeholder="Filter rows…" style="margin-left:auto;padding:6px 9px;width:240px">
+        <button class="b" id="prev">‹</button><button class="b" id="next">›</button></div>
+      <div class="grid" id="grid"><div class="empty">Pick a table.</div></div>
+    </div>
+  </section>
+  <section id="check">
+    <div class="pane">
+      <h2>Check bindings</h2>
+      <div class="help" style="margin:0 0 10px">Finds every binding row that points at an asset that does not exist, and suggests the existing asset with a different trailing number. For one table it also shows teams whose riders point at different assets.</div>
+      <div class="bar"><select id="k_table" style="padding:7px"><option value="">All tables</option></select><select id="k_cat" style="padding:7px"><option value="">All classes</option><option value="cat001">MotoGP only</option><option value="cat002">Moto2 only</option><option value="cat003">Moto3 only</option></select><button class="b p" id="k_go">Scan</button><span id="k_sum" class="tag"></span></div>
+      <div id="k_out"></div>
+      <h2 style="margin-top:34px">Clone audit</h2>
+      <div class="help" style="margin:0 0 10px">Dry-runs a copy of every distinct asset (writes nothing) and groups what would fail and why. Useful to find entries clone can't handle yet; it can take a while on all tables.</div>
+      <div class="bar"><select id="a_table" style="padding:7px"><option value="">All tables</option></select><button class="b p" id="a_go">Run audit</button><span id="a_sum" class="tag"></span></div>
+      <div id="a_out"></div>
+      <h2 style="margin-top:34px">Match riders to their team</h2>
+      <div class="help" style="margin:0 0 10px">Compares each rider's row with their team's row in the matching <span class="mono">…_BikeTeams</span> table (e.g. WinterTest: the team row holds the right carbon number). Only riders that differ are listed. Some tables may differ on purpose (e.g. a rider's own bike), so check before fixing.</div>
+      <div class="bar"><select id="t_table" style="padding:7px"></select><select id="t_cat" style="padding:7px"><option value="">All classes</option><option value="cat001">MotoGP only</option><option value="cat002">Moto2 only</option><option value="cat003">Moto3 only</option></select><button class="b p" id="t_go">Compare</button><button class="b" id="t_fix" disabled>Fix all</button><span id="t_sum" class="tag"></span></div>
+      <div id="t_out"></div>
+    </div>
+  </section>
+  <section id="setup">
+    <div class="pane"><div class="form">
+      <h2>Setup</h2>
+      <label>Mod folder (edits and new files are written here; the DB is copied here on first use)</label>
+      <div class="pathrow"><input type="text" id="s_mod" placeholder="C:\MotoGP24Mod"><button class="b" data-pick="s_mod" data-kind="folder">Browse</button><button class="b" data-reveal="s_mod">Open in Explorer</button></div>
+      <label>Game Paks folder (read-only; leave empty to use only the mod folder)</label>
+      <div class="pathrow"><input type="text" id="s_paks" placeholder="F:\SteamLibrary\steamapps\common\MotoGP24\motogp24\Content\Paks"><button class="b" data-pick="s_paks" data-kind="folder">Browse</button><button class="b" data-reveal="s_paks">Open in Explorer</button></div>
+      <label>AES key (leave empty to keep the saved/default one)</label>
+      <input type="password" id="s_key" placeholder="0x…">
+      <label>UAssetGUI.exe (optional, used by "Edit…"; leave empty to open .uasset files with your Windows default app)</label>
+      <div class="pathrow"><input type="text" id="s_gui" placeholder="C:\Tools\UAssetGUI\UAssetGUI.exe"><button class="b" data-pick="s_gui" data-kind="file">Browse</button><button class="b" data-reveal="s_gui">Open in Explorer</button></div>
+      <label>Game (.exe, or a shortcut to it: .lnk / Steam .url) - used by "Launch game"</label>
+      <div class="pathrow"><input type="text" id="s_game" placeholder="F:\SteamLibrary\steamapps\common\MotoGP24\MotoGP24.exe  or  C:\Users\you\Desktop\MotoGP24.lnk"><button class="b" data-pick="s_game" data-kind="game">Browse</button><button class="b" data-reveal="s_game">Open in Explorer</button></div>
+      <div class="bar"><button class="b" id="s_guisave">Save these paths</button></div>
+      <label style="color:var(--text)"><input type="checkbox" id="s_patch" checked> include *_P.pak patch/mod paks (untick to start from the vanilla game)</label>
+      <div class="bar"><button class="b p" id="s_go">Open project</button></div>
+      <div class="help">Changes are held until you press Save (Ctrl+S). Exit asks what to do with unsaved changes. Folders are paths on the computer running this editor. Settings are remembered in mgp_config.json.</div>
+    </div></div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<dialog id="dlg"></dialog>
+
+<script>
+const TOKEN="__TOKEN__";
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function toast(msg,kind){const d=document.createElement("div");d.className=kind||"";d.textContent=msg;$("#toast").append(d);setTimeout(()=>d.remove(),kind==="bad"?9000:4500)}
+async function api(path,body){
+  const r=await fetch(path,{method:body===undefined?"GET":"POST",headers:{"X-MGP-Token":TOKEN,"Content-Type":"application/json"},body:body===undefined?undefined:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({error:"bad response"}));
+  if(!r.ok) throw new Error(j.error||r.statusText);
+  if(body!==undefined&&!/\/api\/(save|discard|quit|open)$/.test(path)) refreshChanges();
+  return j;
+}
+const guard=f=>async(...a)=>{try{return await f(...a)}catch(e){toast(e.message,"bad")}};
+
+// ---- tabs
+function tab(t){if(t==="check"&&ST.open&&$("#k_table").options.length<2){fillScan();fillTeam()}$$("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t===t));$$("section").forEach(s=>s.classList.toggle("on",s.id===t));
+  if(t==="db"&&!dbLoaded)loadTables();if(t==="sheet"&&ST.open)shLoad();if(t==="hud"&&ST.open&&$("#hu_target").options.length<1)huFind();if(t==="loc"&&ST.open&&$("#lo_file").options.length<1)loFiles();if(t==="browse"&&ST.open&&!$("#br_out").innerHTML)brLoad()}
+$$("nav button").forEach(b=>b.onclick=()=>tab(b.dataset.t));
+
+
+// ---- pack mod
+let pkBusy=false;
+const lsGet=k=>{try{return localStorage.getItem(k)||""}catch(e){return ""}}, lsSet=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+$("#b_pack").onclick=()=>{if(!$("#b_pack").disabled)packDlg()};
+function packDlg(){
+  ask(`<h3>Pack mod</h3><div class="sub">Packs everything in the mod folder's Content into one …_P.pak (uncompressed, unencrypted).</div>
+    <input type="text" id="pk_name" placeholder="Pak name, e.g. MyMod_P" value="${esc(lsGet("pk_name"))}" autocomplete="off">
+    <div class="pathrow" style="margin-top:8px"><input type="text" id="pk_dir" placeholder="Output folder (empty = a _mgp_pak folder inside your mod folder)" value="${esc(lsGet("pk_dir"))}" autocomplete="off"><button class="b" id="pk_pick">Browse</button><button class="b" id="pk_open">Open in Explorer</button></div>`,
+    [{label:"Cancel"},{label:"Pack",cls:"p",fn:async()=>{
+      const name=$("#pk_name").value,folder=$("#pk_dir").value;lsSet("pk_name",name);lsSet("pk_dir",folder);
+      const send=async(overwrite)=>{const r=await api("/api/pak",{name,folder,overwrite});
+        if(r.exists){ask(`<h3>Pak already exists</h3><div class="sub">${esc(r.path)}</div><div class="sub">Replace it, or go back and choose another name?</div>`,
+          [{label:"Cancel",fn:()=>{packDlg();return false}},{label:"Replace",cls:"p",fn:async()=>{await send(true)}}]);return true}
+        packTrack()};
+      if(await send(false))return false}}]);
+  $("#pk_pick").onclick=guard(async()=>{const r=await api("/api/pick",{kind:"folder",initial:$("#pk_dir").value});if(r.path)$("#pk_dir").value=r.path});
+  $("#pk_open").onclick=guard(async()=>{await api("/api/reveal",{path:$("#pk_dir").value,what:"pak"})});
+}
+
+
+// ---- pack progress (toast with the latest log line + full log dialog)
+let pkLines=[],pkTimer=null,pkNext=0,pkEl=null,pkDone=false;
+const pkText=()=>pkLines.join("\n");
+function pkShowLog(){
+  ask(`<h3>Log</h3><pre id="pk_log"></pre>`,[{label:"Close"}]);
+  const upd=()=>{const e=$("#pk_log");if(!e)return;const stick=e.scrollTop+e.clientHeight>=e.scrollHeight-20;e.textContent=pkText();if(stick)e.scrollTop=e.scrollHeight};
+  upd();const t=setInterval(()=>{if(!$("#pk_log")){clearInterval(t);return}upd()},300);
+}
+function packTrack(title,onDone){title=title||"Packing";
+  pkLines=[];pkNext=0;pkDone=false;pkBusy=(title==='Packing'||title==='Importing');refreshChanges();if(pkTimer)clearInterval(pkTimer);if(pkEl)pkEl.remove();
+  pkEl=document.createElement("div");pkEl.className="task";
+  pkEl.innerHTML=`<span class="spin"></span><b>${esc(title)}…</b><span class="ln">starting</span><a>View log</a>`;
+  $("#toast").append(pkEl);pkEl.querySelector("a").onclick=pkShowLog;
+  const tick=async()=>{
+    let r;try{r=await api("/api/pak/status?from="+pkNext)}catch(e){return}
+    if(r.none)return;
+    pkLines.push(...(r.lines||[]));pkNext=r.next||pkNext;
+    const ln=pkEl.querySelector(".ln");if(ln&&pkLines.length)ln.textContent=pkLines[pkLines.length-1];
+    if(!r.running&&!pkDone){pkDone=true;pkBusy=false;refreshChanges();clearInterval(pkTimer);
+      pkEl.className="task "+(r.error?"bad":"ok");
+      pkEl.innerHTML=`<b>${r.error?esc(r.title||title)+" failed":({Packing:"Packed",Importing:"Imported",Scanning:"Scanned"})[r.title||title]||esc(r.title||title)+" done"}</b><span class="ln" title="${esc(r.error||r.result.summary)}">${esc(r.error||r.result.summary)}</span><a>View log</a><span class="x" title="dismiss">✕</span>`;
+      pkEl.querySelector("a").onclick=pkShowLog;pkEl.querySelector(".x").onclick=()=>pkEl.remove();
+      if(!r.error)setTimeout(()=>{if(pkEl&&pkDone)pkEl.remove()},20000);if(onDone)onDone(r)}};
+  pkTimer=setInterval(tick,300);tick();
+}
+
+// ---- HUD whole-file import
+let hiItems=[];
+const hiDraw=()=>{$("#hi_out").innerHTML=`<table class="mono" style="margin:10px 0;width:100%"><tr><th></th><th align=left>File</th><th align=left>Goes to</th><th align=left>Replaces</th><th align=left>Notes</th></tr>`+
+  hiItems.map((x,i)=>`<tr style="${x.ok?"":"opacity:.5"}"><td><input type="checkbox" data-i="${i}" ${x.ok?(x.crash.length?"":"checked"):"disabled"}></td><td>${esc(x.name)}<br><small style="opacity:.6">${esc(x.files.join(", "))}</small></td><td>${esc(x.dest||"-")}</td><td>${esc(x.replaces)}</td><td style="font-size:12px">${x.crash.length?`<span style="color:var(--bad,#ff6b6b)">✖ needs game code the game does not have (${x.crash.map(esc).join(", ")}) - the game will crash on load</span><br>`:""}${x.warn?`<span style="color:var(--warn,#e8a33d)">⚠ penalty/warning widget - may show wrongly (stuck on screen)</span><br>`:""}${x.missing_deps.length?`<span style="color:var(--warn,#e8a33d)">⚠ uses assets the game lacks and your folder does not include: ${x.missing_deps.slice(0,3).map(s=>esc(s.split("/").pop())).join(", ")}${x.missing_deps.length>3?" …":""}</span><br>`:""}${esc(x.note)}</td></tr>`).join("")+"</table>";
+  $("#hi_go").style.display=hiItems.some(x=>x.ok)?"":"none"};
+$("#hi_scan").onclick=guard(async()=>{$("#hi_sum").textContent="Scanning…";
+  try{await api("/api/hud/scan",{source_dir:$("#hu_src").value})}catch(e){$("#hi_sum").textContent="";throw e}
+  packTrack("Scanning",r=>{$("#hi_sum").textContent="";if(r.error||!r.result)return;hiItems=r.result.items||[];
+    $("#hi_sum").textContent=hiItems.length+" items - "+hiItems.filter(x=>x.ok).length+" importable"+(hiItems.some(x=>x.crash.length)?" - "+hiItems.filter(x=>x.crash.length).length+" likely to crash":"")+(hiItems.some(x=>x.warn)?" - "+hiItems.filter(x=>x.warn).length+" penalty/warning":"")+(hiItems.some(x=>x.font)?" - "+hiItems.filter(x=>x.font).length+" font file(s) skipped":"");hiDraw()})});
+ $("#hi_mod").onclick=guard(async()=>{await api("/api/hud/modscan",{});
+  packTrack("Checking mod",r=>{if(r.error||!r.result)return;const b=r.result.bad||[];
+    ask(b.length?`<h3>${b.length} asset(s) will crash the game</h3><div class="sub mono">${b.map(x=>esc(x.file)+"<br>&nbsp;&nbsp;needs "+x.missing.map(esc).join(", ")).join("<br>")}</div><div class="sub">Delete these files (.uasset + .uexp) from your mod folder, or replace them with the game's own.</div>`:`<h3>No crash risk found</h3><div class="sub">${r.result.checked} modded asset(s) checked.</div>`,[{label:"OK",cls:"p"}])})});
+$("#hi_all").onclick=()=>$$("#hi_out input[data-i]:not(:disabled)").forEach(i=>i.checked=true);
+$("#hi_nowarn").onclick=()=>$$("#hi_out input[data-i]").forEach(i=>{if(hiItems[i.dataset.i].warn)i.checked=false});
+$("#hi_none").onclick=()=>$$("#hi_out input[data-i]").forEach(i=>i.checked=false);
+$("#hi_go").onclick=guard(async()=>{
+  const sel=$$("#hi_out input[data-i]:checked").map(i=>hiItems[i.dataset.i]);if(!sel.length){toast("Nothing selected","bad");return}
+  const go=async()=>{await api("/api/hud/import",{source_dir:$("#hu_src").value,keys:sel.map(x=>x.key)});packTrack("Importing",r=>{if(!r.error&&r.result)$("#hi_sum").textContent=r.result.summary})};
+  const cr=sel.filter(x=>x.crash.length);
+  if(cr.length){ask(`<h3>These will crash the game</h3><div class="sub">${cr.map(x=>esc(x.name)+" - needs "+x.crash.map(esc).join(", ")).join("<br>")}</div><div class="sub">They are built on game code (C++ classes) that this game build does not contain. The game stops with a fatal error when it loads them. Untick them, or use the HUD skin below to restyle the game's own widget instead.</div>`,
+    [{label:"Cancel"},{label:"Import anyway",cls:"p",fn:go}]);return}
+  const w=sel.filter(x=>x.warn);
+  if(w.length){ask(`<h3>Penalty/warning widgets selected</h3><div class="sub">${w.map(x=>esc(x.name)).join("<br>")}</div><div class="sub">These rely on the game's own logic. Taken from another game they can stay on screen all the time with a fixed value. You can untick them and import the rest.</div>`,
+    [{label:"Cancel"},{label:"Import anyway",cls:"p",fn:go}])}else await go()});
+
+// ---- HUD skin
+let huRows=[];
+const huFind=guard(async()=>{const r=await api("/api/hud/targets?q="+encodeURIComponent($("#hu_find").value||"hud"));
+  $("#hu_target").innerHTML=r.files.map(f=>`<option>${esc(f)}</option>`).join("")||"<option value=''>nothing found</option>"});
+$("#hu_find").onchange=huFind;
+$("#hu_pick").onclick=guard(async()=>{const r=await api("/api/pick",{kind:"folder",initial:$("#hu_src").value});if(r.path)$("#hu_src").value=r.path});
+const huBody=()=>({target:$("#hu_target").value,source_dir:$("#hu_src").value});
+function huDraw(){
+  const on=g=>($$(".hg").find(c=>c.dataset.g===g)||{}).checked;
+  $("#hu_out").innerHTML=`<table class="mono" style="margin:10px 0;width:100%"><tr><th></th><th align=left>Widget</th><th align=left>Property</th><th align=left>Game (now)</th><th align=left>Other game</th><th align=left>Status</th></tr>`+
+   huRows.map((x,i)=>{const ok=x.status==="patch";return `<tr style="${ok?"":"opacity:.5"}"><td><input type="checkbox" data-i="${i}" ${ok&&on(x.group)?"checked":""} ${ok?"":"disabled"}></td><td>${esc(x.widget)}</td><td>${esc(x.path)}</td><td title="${esc(x.target)}">${esc(x.target.split("/").pop().slice(-40))}</td><td title="${esc(x.source)}">${esc(x.source.split("/").pop().slice(-40))}</td><td>${esc(x.status)}</td></tr>`}).join("")+"</table>"}
+$$(".hg").forEach(c=>c.onchange=()=>{$$("#hu_out input[data-i]").forEach(i=>{const x=huRows[i.dataset.i];if(x.group===c.dataset.g&&!i.disabled)i.checked=c.checked})});
+$("#hu_go").onclick=guard(async()=>{const r=await api("/api/hud/compare",huBody());huRows=r.rows;
+  $("#hu_sum").textContent=r.common+" widgets in common - "+r.rows.filter(x=>x.status==="patch").length+" can be copied, "+r.rows.filter(x=>x.status.startsWith("needs")).length+" need an import, "+r.hidden+" exist on one side only (not touched). Only in the other game: "+(r.only_source.join(", ")||"-");
+  $("#hu_bar").style.display=huRows.length?"":"none";huDraw()});
+$("#hu_graft").onclick=guard(async()=>{const q=await api("/api/hud/graft",huBody());toast(q.file+": swapped "+(q.swapped.join(", ")||"nothing (already done)")+"; changed visibility of "+q.hidden.length+" widget(s) ["+q.hidden.join(", ")+"] - Save to write","ok");await refreshChanges()});
+$("#hu_swap").onclick=guard(async()=>{await api("/api/hud/swappos",huBody());toast("Swapped - Save to write","ok");await refreshChanges()});
+$("#fn_scan").onclick=guard(async()=>{const r=await api("/api/fonts/list",{});
+  $("#fn_out").innerHTML=`<table class="mono" style="margin:10px 0"><tr><th></th><th align=left>Font asset</th><th align=left>Face now</th><th align=left>From</th></tr>`+
+   r.rows.map((x,i)=>`<tr><td><input type=checkbox class="fnc" data-r="${esc(x.rel)}" ${x.pick?"checked":""}></td><td>${esc(x.name)}</td><td>${esc(x.faces.join(", "))}</td><td>${esc(x.origin||"")}</td></tr>`).join("")+
+   `</table><div class="help">${r.scanned} asset(s) in the Fonts folder; not listed: ${esc((r.skipped||[]).join(" | ")||"none")}</div><table>`+
+   `</table><div class="bar"><button class="b p" id="fn_go">Switch ticked fonts (Bold/Light/Regular matched by name)</button></div>`;
+  $("#fn_go").onclick=guard(async()=>{const fonts=$$(".fnc").filter(c=>c.checked).map(c=>c.dataset.r);
+    if(!fonts.length){toast("Nothing ticked","bad");return}
+    const q=await api("/api/fonts/apply",{fonts,new:r.new});toast("Switched "+q.done.length+" font(s) - Save to write","ok");await refreshChanges()})});
+$("#hu_vis").onclick=guard(async()=>{const r=await api("/api/hud/vis",huBody());
+  const opts=["","Visible","Collapsed","Hidden","HitTestInvisible","SelfHitTestInvisible"];
+  $("#hu_visout").innerHTML=`<table class="mono" style="margin:10px 0"><tr><th align=left>Widget</th><th align=left>Class</th><th align=left>Now</th><th align=left>Set to</th></tr>`+
+   r.widgets.map(x=>`<tr style="${x.warn?"background:rgba(255,160,0,.12)":""}"><td>${esc(x.name)}</td><td>${esc(x.cls)}</td><td>${esc(x.vis||"(default)")}</td><td><select class="hv" data-n="${esc(x.name)}">${opts.map(o=>`<option value="${o}">${o||("no change (now "+(x.vis||"default")+")")}</option>`).join("")}</select></td></tr>`).join("")+
+   `</table><div class="bar"><button class="b" id="hv_pen">Collapse penalty / warning / long-lap</button><button class="b p" id="hv_go">Apply</button></div>`;
+  $("#hv_pen").onclick=()=>{r.widgets.forEach(x=>{if(x.warn){const s=$$(".hv").find(s=>s.dataset.n===x.name);if(s)s.value="Collapsed"}})};
+  $("#hv_go").onclick=guard(async()=>{const changes={};$$(".hv").forEach(s=>{if(s.value)changes[s.dataset.n]=s.value});
+    if(!Object.keys(changes).length){toast("Nothing selected","bad");return}
+    const q=await api("/api/hud/vis/set",Object.assign(huBody(),{changes}));toast("Changed "+q.done.length+" widget(s) - Save to write them","ok");await refreshChanges();$("#hu_vis").click()})});
+$("#hu_apply").onclick=guard(async()=>{const picks=$$("#hu_out input[data-i]:checked").map(i=>huRows[i.dataset.i]);
+  if(!picks.length){toast("Nothing selected","bad");return}
+  const r=await api("/api/hud/apply",Object.assign(huBody(),{picks}));toast("Applied "+r.applied+" values"+(r.skipped.length?", skipped "+r.skipped.length:"")+" - Save to write them","ok");await refreshChanges();$("#hu_go").click()});
+
+// ---- replacement sheet
+let shData=null;
+const shLoad=guard(async()=>{const l=$("#sh_loc").value;shData=await api("/api/sheet"+(l?"?loc="+encodeURIComponent(l):""));
+  $("#sh_loc").innerHTML=`<option value="__all__"${shData.loc==="__all__"?" selected":""}>All Italian (it/) localization files</option>`+shData.locs.map(x=>`<option${x===shData.loc?" selected":""}>${esc(x)}</option>`).join("");shDraw()});
+$("#sh_loc").onchange=shLoad;
+function shDraw(){
+  if(!shData)return;const k=$("#sh_kind").value,q=$("#sh_q").value.toLowerCase(),only=$("#sh_only").checked;
+  const all=shData.sections[k];
+  const rows=all.filter(r=>(!only||r.with||r.notes||r.changed)&&(!q||(r.key+" "+r.name+" "+r.loc+" "+r.info+" "+r.with+" "+r.notes).toLowerCase().includes(q)));
+  $("#sh_sum").textContent=rows.length+" of "+all.length+" - "+all.filter(r=>r.with).length+" filled - names found for "+all.filter(r=>r.loc).length+" ("+shData.files+" file"+(shData.files===1?"":"s")+")"+(shData.suggestions?" - "+shData.suggestions+" changed in your mod's localization":"");
+  $("#sh_fill").style.display=shData.suggestions?"":"none";
+  $("#sh_out").innerHTML=`<table class="mono" style="margin:10px 0;width:100%"><tr><th align=left>Base game</th><th align=left>Info</th><th align=left>Replaced with (mod)</th><th align=left>Notes</th><th align=left>DB changes</th></tr>`+
+   rows.map(r=>`<tr><td style="white-space:nowrap">${esc(r.loc||r.name)}<br><small style="opacity:.6" title="${esc(r.loc_ref?r.loc_ref+" ("+r.loc_n+" candidates)":"no localization match")}">${esc(r.key)}</small></td><td style="opacity:.7">${esc(r.group)}<br><small>${esc(r.info)}</small></td>`+
+   `<td><input type="text" data-k="${esc(r.key)}" data-f="with" value="${esc(r.with)}" placeholder="${esc(r.suggest?"mod: "+r.suggest:"")}" style="width:100%;box-sizing:border-box"></td>`+
+   `<td><input type="text" data-k="${esc(r.key)}" data-f="notes" value="${esc(r.notes)}" style="width:100%;box-sizing:border-box"></td>`+
+   `<td style="opacity:.7;font-size:12px">${esc(r.changed)}</td></tr>`).join("")+"</table>";
+  $$("#sh_out input").forEach(i=>i.onchange=guard(async()=>{
+    const row=all.find(r=>r.key===i.dataset.k);row[i.dataset.f]=i.value;
+    await api("/api/sheet/set",{kind:k,key:i.dataset.k,[i.dataset.f]:i.value});toast("Saved","ok")}));
+}
+$("#sh_kind").onchange=shDraw;$("#sh_q").oninput=shDraw;$("#sh_only").onchange=shDraw;
+$("#sh_csv").onclick=()=>{if(!shData)return;const k=$("#sh_kind").value,q=s=>'"'+String(s).replace(/"/g,'""')+'"';
+  const t=["Base game,Key,Info,Replaced with,Notes,DB changes"].concat(shData.sections[k].map(r=>[r.loc||r.name,r.key,r.group+" "+r.info,r.with,r.notes,r.changed].map(q).join(","))).join("\r\n");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+t],{type:"text/csv"}));a.download="replacement_sheet_"+k+".csv";a.click()};
+
+function csvParse(t){t=t.replace(/^\ufeff/,"");const out=[];let row=[],f="",q=false;
+  for(let i=0;i<t.length;i++){const c=t[i];
+    if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}
+    else if(c==='"')q=true;else if(c===","){row.push(f);f=""}
+    else if(c==="\n"||c==="\r"){if(c==="\r"&&t[i+1]==="\n")i++;row.push(f);f="";out.push(row);row=[]}
+    else f+=c}
+  if(f||row.length){row.push(f);out.push(row)}return out.filter(r=>r.some(x=>x))}
+$("#sh_imp").onclick=()=>$("#sh_file").click();
+$("#sh_fill").onclick=guard(async()=>{const data={};let n=0;
+  for(const k in shData.sections)for(const r of shData.sections[k])if(r.suggest&&!r.with){(data[k]=data[k]||{})[r.key]={with:r.suggest};n++}
+  if(!n){toast("Nothing to fill","bad");return}
+  await api("/api/sheet/import",{data});toast("Filled "+n+" entries from your mod","ok");await shLoad()});
+$("#sh_file").onchange=guard(async()=>{
+  const fl=$("#sh_file").files[0];if(!fl)return;const txt=await fl.text();$("#sh_file").value="";
+  let data={};
+  if(fl.name.toLowerCase().endsWith(".json")){data=JSON.parse(txt)}
+  else{const rows=csvParse(txt),hd=rows.shift().map(x=>x.trim().toLowerCase());
+    const ik=hd.indexOf("key"),iw=hd.indexOf("replaced with"),inn=hd.indexOf("notes");
+    if(ik<0||iw<0)throw new Error("Not a sheet CSV: needs 'Key' and 'Replaced with' columns");
+    const where={};for(const k in shData.sections)for(const r of shData.sections[k])where[r.key]=k;
+    for(const r of rows){const key=r[ik],k=where[key];if(!k)continue;(data[k]=data[k]||{})[key]={with:r[iw]||"",notes:inn<0?"":(r[inn]||"")}}}
+  const r=await api("/api/sheet/import",{data});toast("Imported "+r.imported+" entries","ok");await shLoad()});
+
+// ---- localization
+let loOff=0;
+const loFiles=guard(async()=>{
+  const r=await api("/api/loc/files");
+  $("#lo_file").innerHTML=r.files.length?r.files.map(f=>`<option value="${esc(f.rel)}">${esc(f.rel)} (${esc(f.origin)})</option>`).join(""):"<option value=''>no .locres files found</option>";
+  if(r.files.length)loSearch(0);
+});
+const loSearch=guard(async(off)=>{
+  loOff=off||0;const rel=$("#lo_file").value;if(!rel)return;
+  const r=await api(`/api/loc/entries?rel=${encodeURIComponent(rel)}&q=${encodeURIComponent($("#lo_q").value)}&offset=${loOff}&limit=100`);
+  $("#lo_sum").textContent=r.total+" of "+r.all+" entries";
+  $("#lo_out").innerHTML=`<table class="mono" style="margin:10px 0;width:100%">`+r.rows.map((x,i)=>`<tr><td style="white-space:nowrap;vertical-align:top;padding-right:10px;opacity:.7">${esc(x.ns)}<br>${esc(x.key)}</td><td style="width:70%"><textarea data-ns="${esc(x.ns)}" data-key="${esc(x.key)}" data-orig="${esc(x.text)}" rows="${Math.min(6,1+(x.text.match(/\n/g)||[]).length)}" style="width:100%;box-sizing:border-box">${esc(x.text)}</textarea></td></tr>`).join("")+"</table>";
+  $$("#lo_out textarea").forEach(t=>t.onchange=guard(async()=>{
+    await api("/api/loc/set",{rel:$("#lo_file").value,edits:[{ns:t.dataset.ns,key:t.dataset.key,text:t.value}]});
+    t.dataset.orig=t.value;toast("Staged","ok");
+  }));
+  $("#lo_more").style.display=r.total>100?"":"none";
+  $("#lo_prev").disabled=loOff<=0;$("#lo_next").disabled=loOff+100>=r.total;
+});
+$("#lo_go").onclick=()=>loSearch(0);$("#lo_q").onkeydown=e=>{if(e.key==="Enter")loSearch(0)};$("#lo_file").onchange=()=>loSearch(0);
+$("#lo_prev").onclick=()=>loSearch(Math.max(0,loOff-100));$("#lo_next").onclick=()=>loSearch(loOff+100);
+
+
+// ---- browse
+let brDir="Content";
+const brLoad=guard(async(dir,refresh)=>{
+  if(dir!==undefined)brDir=dir;
+  const r=await api(`/api/browse?dir=${encodeURIComponent(brDir)}&q=${encodeURIComponent($("#br_q").value)}${refresh?"&refresh=1":""}`);
+  const parts=brDir.split("/");
+  $("#br_path").innerHTML=parts.map((p,i)=>`<a href="#" data-d="${esc(parts.slice(0,i+1).join("/"))}">${esc(p)}</a>`).join(" / ");
+  $("#br_sum").textContent=r.total_files+" files in total"+(r.truncated?" - list cut, narrow the search":"");
+  let h="<table class='mono' style='width:100%;margin:10px 0'>";
+  if(brDir.includes("/"))h+=`<tr><td colspan="3"><a href="#" data-d="${esc(brDir.slice(0,brDir.lastIndexOf("/")))}">..</a></td></tr>`;
+  h+=r.dirs.map(d=>`<tr><td colspan="2">📁 <a href="#" data-d="${esc(brDir+"/"+d.name)}">${esc(d.name)}</a></td><td style="opacity:.6">${d.count} files</td></tr>`).join("");
+  h+=r.items.map((it,i)=>`<tr><td style="word-break:break-all">${esc(it.name)}</td><td style="opacity:.6;white-space:nowrap">${esc(it.exts.filter(Boolean).join(" "))} ${esc(it.origin)}</td><td style="white-space:nowrap">`+
+    (it.asset?`<button class="b" data-a="edit" data-i="${i}">Edit</button> <button class="b" data-a="clone" data-i="${i}">Clone</button> `:"")+
+    (it.base.toLowerCase().endsWith(".locres")?`<button class="b" data-a="loc" data-i="${i}">Open in Localization</button> `:"")+
+    `<button class="b" data-a="extract" data-i="${i}">Extract</button></td></tr>`).join("");
+  $("#br_out").innerHTML=h+"</table>";
+  $$("#br_out a[data-d],#br_path a").forEach(a=>a.onclick=e=>{e.preventDefault();$("#br_q").value="";brLoad(a.dataset.d)});
+  $$("#br_out button[data-a]").forEach(btn=>btn.onclick=guard(()=>brAct(btn.dataset.a,r.items[+btn.dataset.i])));
+});
+async function brAct(a,it){
+  if(a==="extract"){
+    const go=async(mode)=>{const r=await api("/api/browse/extract",{bases:[it.base],overwrite:mode});
+      if(r.asked){
+        ask(`<h3>Already in your mod folder</h3><div class="sub">${r.exists.map(esc).join("<br>")}</div><div class="sub">Replace them with the game's original, or skip the existing ones? (Replaced copies are backed up.)</div>`,
+          [{label:"Cancel"},{label:"Skip",fn:async()=>{await go("skip")}},{label:"Replace",cls:"p",fn:async()=>{await go("replace")}}]);return}
+      toast(r.files.length?`Extracted ${r.files.length} file(s) to your mod folder`:"Nothing new to extract","ok");brLoad()};
+    await go(undefined);return}
+  if(a==="edit"){const r=await api("/api/edit",{pkg:it.pkg});toast(r.launched?"Opened in UAssetGUI":("Staged "+r.path+(r.error?" ("+r.error+")":"")),r.launched?"ok":"bad");return}
+  if(a==="loc"){tab("loc");await loFiles();$("#lo_file").value=it.base;loSearch(0);return}
+  if(a==="clone"){
+    const cur=it.name.split("/").pop();
+    ask(`<h3>Clone ${esc(cur)}</h3><div class="sub">Copies this data asset into the same folder under a new name. It keeps pointing at the original's materials/textures.</div><input type="text" id="cl_name" value="${esc(cur+"_copy")}" autocomplete="off">`,
+      [{label:"Cancel"},{label:"Clone",cls:"p",fn:async()=>{const r=await api("/api/browse/clone",{pkg:it.pkg,name:$("#cl_name").value});toast("Created "+r.new,"ok");brLoad(undefined,true)}}]);
+  }
+}
+$("#br_go").onclick=()=>brLoad();$("#br_q").onkeydown=e=>{if(e.key==="Enter")brLoad()};$("#br_ref").onclick=()=>brLoad(undefined,true);
+
+
+// ---- setup: browse / open in explorer
+$$("[data-pick]").forEach(b=>b.onclick=guard(async()=>{
+  const inp=$("#"+b.dataset.pick);const r=await api("/api/pick",{kind:b.dataset.kind,initial:inp.value});
+  if(r.path){inp.value=r.path;inp.dispatchEvent(new Event("change"))}
+}));
+$$("[data-reveal]").forEach(b=>b.onclick=guard(async()=>{await api("/api/reveal",{path:$("#"+b.dataset.reveal).value})}));
+
+// ---- port audio
+let auBikes=[];
+const auSel=()=>$$(".au_c:checked").map(c=>c.value);
+const auScan=guard(async()=>{
+  const r=await api("/api/audio/scan?root="+encodeURIComponent($("#au_root").value));auBikes=r.bikes;
+  $("#au_sum").textContent=r.bikes.length+" bikes"+(r.has_init?"":" - no Init.bnk found in that folder");
+  $("#au_out").innerHTML=r.bikes.length?`<table class="mono" style="margin:10px 0"><tr><th></th><th>BikeAudio</th><th>Engine / exhaust</th><th>Bank</th><th></th></tr>`+r.bikes.map(b=>`<tr><td><input type="checkbox" class="au_c" value="${esc(b.name)}"></td><td>${esc(b.name)}</td><td>${esc(b.engine||"?")} / ${esc(b.exhaust||"?")}</td><td>${esc((b.banks||[]).join(", "))} ${b.bnk_found?"":"<b>(.bnk missing)</b>"}</td><td>${b.exists_in_target?"already here":""}</td></tr>`).join("")+"</table>":"<div class='help'>No BikeAudio assets found.</div>";
+  $("#au_bar").style.display=r.bikes.length?"":"none";$("#au_res").innerHTML="";
+});
+const auRun=dry=>guard(async()=>{
+  const bikes=auSel();if(!bikes.length)throw new Error("tick at least one bike");
+  const r=await api("/api/audio/port",{root:$("#au_root").value,bikes,dry_run:dry,gain:parseFloat($("#au_gain").value)||0});
+  let h=`<h2 style="margin-top:20px">${dry?"Check":"Ported"}</h2>`;
+  h+=r.results.map(x=>`<div style="margin:8px 0"><b>${esc(x.bike)}</b> ${x.ok?"<span class='tag'>OK</span>":"<span class='tag' style='color:#c33'>blocked</span>"}`+
+    (x.problems||[]).map(p=>`<div style="color:#c33">✗ ${esc(p)}</div>`).join("")+(x.warnings||[]).map(p=>`<div>⚠ ${esc(p)}</div>`).join("")+(x.actions||[]).map(p=>`<div class="help">• ${esc(p)}</div>`).join("")+
+    (!dry&&x.ok&&x.new_path?`<div>Paste into Replace: <span class="mono">${esc(x.new_path)}</span></div>`:"")+"</div>").join("");
+  if(r.init&&r.init.added&&r.init.added.length)h+=`<div class="help">Init.bnk: adds ${r.init.added.length} object(s)</div>`;
+  if(!dry)h+=`<div class="help">${r.written} files staged - press Save to write them.</div>`;
+  $("#au_res").innerHTML=h;
+});
+$("#au_scan").onclick=auScan;$("#au_check").onclick=auRun(true);$("#au_go").onclick=auRun(false);
+
+// ---- check
+const fillTeam=guard(async()=>{const r=await api("/api/teamsync?table=");$("#t_table").innerHTML=r.names.map(n=>`<option ${n.includes("WinterTest")?"selected":""}>${esc(n)}</option>`).join("")});
+let tsRows=[];
+const runTeam=guard(async()=>{
+  const t=$("#t_table").value;const r=await api("/api/teamsync?cat="+$("#t_cat").value+"&table="+encodeURIComponent(t));tsRows=r.rows;
+  const fixable=r.rows.filter(x=>x.want_exists).length;
+  $("#t_sum").textContent=`${r.rows.length} of ${r.total} riders differ · ${fixable} fixable`;$("#t_fix").disabled=!fixable;
+  $("#t_out").innerHTML=r.rows.length?`<table><tr><th>Rider</th><th>Team</th><th>Rider row (now)</th><th>Team row</th><th></th></tr>`+r.rows.map(x=>`<tr><td class="mono">${esc(x.key)}</td><td class="mono">${esc(x.team)}</td>
+    <td class="mono">${esc(x.current)} ${x.cur_exists?"":'<span class="tag bad">missing</span>'}</td><td class="mono">${esc(x.want_name)} ${x.want_exists?"":'<span class="tag bad">missing</span>'}</td>
+    <td>${x.want_exists?`<a href="#" class="tsfix" data-k="${esc(x.key)}" style="color:var(--acc)">use team's</a>`:""}</td></tr>`).join("")+"</table>":'<div class="empty">All riders match their team.</div>';
+  $$("#t_out a.tsfix").forEach(a=>a.onclick=guard(async e=>{e.preventDefault();await api("/api/teamsync",{table:t,keys:[a.dataset.k]});a.closest("tr").style.opacity=.35;a.remove();toast("Updated "+a.dataset.k,"ok")}));
+});
+$("#t_go").onclick=runTeam;
+$("#t_fix").onclick=guard(async()=>{const t=$("#t_table").value;const n=tsRows.filter(x=>x.want_exists).length;
+  ask(`<h3>Point ${n} riders at their team's asset?</h3><p>Table: ${esc(t)}. Staged only - nothing is written to the mod folder until you press Save.</p>`,
+   [{label:"Cancel"},{label:"Fix all",cls:"p",fn:async()=>{const r=await api("/api/teamsync",{table:t,cat:$("#t_cat").value});toast(`Updated ${r.changed} row(s)`+(r.skipped.length?`; skipped ${r.skipped.length} (team asset missing)`:""),"ok");await runTeam();if(cur)selectPilot(cur)}}])});
+const fillScan=guard(async()=>{const r=await api("/api/scan?table=__none__");$("#k_table").innerHTML=$("#a_table").innerHTML='<option value="">All tables</option>'+r.names.map(n=>`<option>${esc(n)}</option>`).join("")});
+const runScan=guard(async()=>{
+  $("#k_sum").textContent="scanning…";const t=$("#k_table").value;
+  const r=await api("/api/scan?cat="+$("#k_cat").value+"&table="+encodeURIComponent(t));
+  $("#k_sum").textContent=`${r.rows.length} missing · ${r.tables} table(s)`+(t?` · ${r.conflicts.length} team conflict(s)`:"");
+  let h="";
+  if(r.conflicts.length){h+=`<div class="cat">teams whose riders point at different assets</div><table><tr><th style="width:260px">Team</th><th>Assets (riders)</th></tr>`+
+    r.conflicts.map(c=>`<tr><td class="mono">${esc(c.team)}</td><td class="mono">${c.targets.map(x=>`${esc(x.target)} <span class="tag">${esc(x.riders.map(k=>k.split("_").slice(1).join("_")).join(", "))}</span>`).join("<br>")}</td></tr>`).join("")+"</table>"}
+  h+=r.rows.length?`<div class="cat">missing assets</div><table><tr><th>Rider</th><th>Team</th><th>Table</th><th>Points at (missing)</th><th>Fix</th></tr>`+
+    r.rows.map(x=>`<tr><td class="mono">${esc(x.key)}</td><td class="mono">${esc(x.team)}${x.conflict?' <span class="tag bad">conflict</span>':""}</td><td class="mono">${esc(x.table)}</td><td class="mono">${esc(x.target.split("/").pop())}</td>
+      <td>${x.suggest.length?x.suggest.map(p=>`<div><a href="#" class="ksug" data-rel="${esc(x.rel)}" data-k="${esc(x.key)}" data-p="${esc(p)}" style="color:var(--acc)">${esc(p.split("/").pop())}</a></div>`).join(""):'<span class="tag">no suggestion</span>'}</td></tr>`).join("")+"</table>"
+    :`<div class="empty">Nothing missing.</div>`;
+  $("#k_out").innerHTML=h;
+  $$("#k_out a.ksug").forEach(a=>a.onclick=guard(async e=>{e.preventDefault();const r=await api("/api/replace",{rel:a.dataset.rel,key:a.dataset.k,target:a.dataset.p});
+    toast(a.dataset.k+" -> "+r.new.split("/").pop(),"ok");a.closest("tr").style.opacity=.35;a.remove();if(cur===a.dataset.k)selectPilot(cur)}));
+});
+$("#k_go").onclick=runScan;
+const runAudit=guard(async()=>{$("#a_sum").textContent="running…";$("#a_out").innerHTML="";
+  const r=await api("/api/cloneaudit?table="+encodeURIComponent($("#a_table").value));
+  $("#a_sum").textContent=`${r.checked} assets · ${r.ok} can be cloned · ${r.checked-r.ok} cannot`;
+  $("#a_out").innerHTML=r.fails.length?`<table><tr><th style="width:70px">Count</th><th>Reason</th><th>Examples</th></tr>`+r.fails.map(f=>`<tr><td>${f.count}</td><td class="mono">${esc(f.reason)}</td><td class="mono">${f.examples.map(e=>esc(e.table+" / "+e.key+" → "+e.asset)).join("<br>")}</td></tr>`).join("")+"</table>":'<div class="empty">Everything can be cloned.</div>'});
+$("#a_go").onclick=runAudit;
+
+// ---- setup
+let ST={};
+async function loadState(){
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v72";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  $("#s_gui").value=ST.uassetgui||"";$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
+  $("#where").textContent=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";
+  if(ST.open){await loadPilots();const n=await refreshChanges();if(n&&!recoveryAsked){recoveryAsked=true;recoverDlg(n)}}else tab("setup");
+}
+let recoveryAsked=false,dirtyN=0,quitting=false;
+async function refreshChanges(){
+  try{const c=await api("/api/changes");dirtyN=c.files.length;
+    $("#dirty").textContent=dirtyN?`● ${dirtyN} unsaved file${dirtyN>1?"s":""}`:"";$("#dirty").classList.toggle("on",dirtyN>0);
+    $("#dirty").title=c.files.join("\n");$("#b_save").disabled=$("#b_disc").disabled=!dirtyN||pkBusy;$("#b_save").title=pkBusy?"Disabled while packing":"";$("#b_pack").disabled=!ST.open||dirtyN>0||pkBusy;$("#b_pack").title=pkBusy?"A pack is running":dirtyN?"Save your changes first to enable":"Pack the mod folder into a _P.pak";return dirtyN}catch(e){return 0}
+}
+async function reloadViews(){await refreshChanges();if(cur)await selectPilot(cur);if(tcur&&dbLoaded){await loadTables();await loadRows()}}
+const doSave=guard(async()=>{const r=await api("/api/save",{});toast(`Saved ${r.saved} file(s) to the mod folder`,"ok");await reloadViews()});
+const doDiscard=()=>{if(!dirtyN)return;ask(`<h3>Discard ${dirtyN} unsaved file(s)?</h3><p>All changes since your last save are lost.</p>`,
+  [{label:"Cancel"},{label:"Discard",cls:"p",fn:async()=>{await api("/api/discard",{});toast("Unsaved changes discarded","ok");await reloadViews()}}])};
+function recoverDlg(n){ask(`<h3>Unsaved changes found</h3><p>${n} file(s) from an earlier session were never saved.</p>`,
+  [{label:"Keep editing them"},{label:"Discard them",fn:async()=>{await api("/api/discard",{});await reloadViews()}},{label:"Save them now",cls:"p",fn:()=>doSave()}])}
+async function bye(save){quitting=true;try{await api("/api/quit",{save})}catch(e){}document.body.innerHTML='<div class="empty" style="margin:auto;font-size:16px">Editor closed'+(save?" - changes saved":"")+'. You can close this tab.</div>'}
+$("#b_save").onclick=doSave;$("#b_disc").onclick=doDiscard;
+$("#b_exit").onclick=async()=>{await refreshChanges();
+  if(!dirtyN)return bye(false);
+  ask(`<h3>You have unsaved changes</h3><p>${dirtyN} file(s) have not been saved to the mod folder.</p>`,
+    [{label:"Cancel"},{label:"Exit without saving",fn:()=>bye(false)},{label:"Save and exit",cls:"p",fn:()=>bye(true)}])};
+window.addEventListener("beforeunload",e=>{if(dirtyN&&!quitting){e.preventDefault();e.returnValue=""}});
+document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="s"){e.preventDefault();if(dirtyN)doSave()}});
+$("#s_guisave").onclick=guard(async()=>{const r=await api("/api/settings",{uassetgui:$("#s_gui").value,game:$("#s_game").value});ST.game=r.game;ST.uassetgui=r.uassetgui;$("#b_launch").disabled=!ST.game;toast("Saved","ok")});
+$("#b_launch").onclick=guard(async()=>{await api("/api/launch",{});toast(dirtyN?"Game started - "+dirtyN+" unsaved change(s) are not in the game":"Game started","ok")});
+$("#s_go").onclick=guard(async()=>{
+  ST=await api("/api/open",{mod_folder:$("#s_mod").value,paks_dir:$("#s_paks").value,aes_key:$("#s_key").value,include_patch:$("#s_patch").checked});$("#b_launch").disabled=!ST.game;
+  $("#s_key").value="";dbLoaded=false;cur=null;toast("Project opened","ok");await loadState();tab("riders");
+});
+
+// ---- riders
+let pilots=[],pilotN={},officialKeys=[],grp="official",cur=null,bindings=[],info={};
+async function loadPilots(){const r=await api("/api/pilots?group="+grp);pilots=r.map(x=>x.key);pilotN=Object.fromEntries(r.map(x=>[x.key,x.n]));if(grp==="official")officialKeys=pilots;drawPilots()}
+async function setGroup(g){if(g===grp)return;grp=g;cur=null;$("#rsearch").value="";$$("#grp button").forEach(b=>b.classList.toggle("on",b.dataset.g===g));
+  $("#rpane").innerHTML='<div class="empty">Pick an entry on the left.</div>';await loadPilots()}
+$$("#grp button").forEach(b=>b.onclick=guard(()=>setGroup(b.dataset.g)));
+function drawPilots(){
+  const q=$("#rsearch").value.toLowerCase();
+  $("#rlist").innerHTML=pilots.filter(p=>p.toLowerCase().includes(q)).map(p=>`<div data-k="${esc(p)}" class="${p===cur?"on":""}"><span>${esc(p)}</span>${grp==="official"?"":`<small>${pilotN[p]}</small>`}</div>`).join("");
+  $$("#rlist div").forEach(d=>d.onclick=()=>selectPilot(d.dataset.k));
+}
+$("#rsearch").oninput=drawPilots;
+const selectPilot=guard(async k=>{
+  cur=k;drawPilots();
+  [bindings,info]=await Promise.all([api("/api/bindings?group="+grp+"&key="+encodeURIComponent(k)),api("/api/describe?group="+grp+"&key="+encodeURIComponent(k))]);
+  drawPilot();
+});
+function drawPilot(){
+  const cats={};bindings.forEach(b=>(cats[b.cat]??=[]).push(b));
+  const order=["bike","helmet","suit","gloves","boots","buttpatch","face","other"];
+  let h=`<h2>${esc(cur)}</h2><div class="sub">${info.target?esc(info.target):"no bike row"}</div>
+   <div class="bar"><button class="b" id="b_look">Copy look from rider…</button><button class="b" id="b_clone" ${info.target?"":"disabled"}>Clone bike set…</button>
+   ${info.assets?`<span class="tag">bike variant ${esc(info.tag)} · ${info.assets} assets</span>`:""}
+   ${(info.missing||[]).length?`<span class="tag bad">${info.missing.length} referenced asset(s) missing</span>`:""}</div>`;
+  for(const c of order.filter(c=>cats[c])){
+    h+=`<div class="cat">${c}</div><table><tr><th style="width:210px">Table</th><th>Current asset</th><th style="width:130px">Status</th><th style="width:260px"></th></tr>`;
+    for(const b of cats[c]){
+      h+=`<tr><td class="mono">${esc(b.table)}</td><td class="mono">${esc(b.target)}</td>
+      <td>${b.exists?`<span class="tag ${b.origin==="unsaved"?"warn":"ok"}">${esc(b.origin)}</span>`:`<span class="tag bad">not found</span>`+(b.suggest&&b.suggest.length?`<div class="help">did you mean:</div>`+b.suggest.map(p=>`<div><a href="#" class="sug" data-rel="${esc(b.rel)}" data-p="${esc(p)}" style="color:var(--acc)">${esc(p.split("/").pop())}</a></div>`).join(""):"")}</td>
+      <td style="white-space:nowrap"><button class="b" data-rel="${esc(b.rel)}">Replace…</button> <button class="b" data-edit="${esc(b.rel)}">Edit…</button> <button class="b" data-clone="${esc(b.rel)}">Clone…</button></td></tr>`;
+    }
+    h+="</table>";
+  }
+  $("#rpane").innerHTML=h;
+  $$("#rpane button[data-rel]").forEach(b=>b.onclick=()=>replaceDlg(b.dataset.rel));
+  $$("#rpane a.sug").forEach(a=>a.onclick=guard(async e=>{e.preventDefault();finish(await api("/api/replace",{rel:a.dataset.rel,key:cur,target:a.dataset.p}))}));
+  $$("#rpane button[data-clone]").forEach(b=>b.onclick=()=>cloneRowDlg(b.dataset.clone));
+  $$("#rpane button[data-edit]").forEach(b=>b.onclick=()=>editDlg(b.dataset.edit));
+  $("#b_look").onclick=lookDlg;$("#b_clone").onclick=cloneDlg;
+}
+
+// ---- dialogs
+const dlg=$("#dlg");
+function ask(html,buttons){ // buttons: [{label,cls,fn}] ; fn returns false to keep open
+  dlg.innerHTML=html+`<div class="row"></div>`;
+  const row=dlg.querySelector(".row");
+  buttons.forEach(b=>{const e=document.createElement("button");e.className="b "+(b.cls||"");e.textContent=b.label;
+    e.onclick=async()=>{let r;try{r=b.fn?await b.fn():undefined}catch(x){toast(x.message,"bad");return}if(r!==false)dlg.close()};row.append(e)});
+  dlg.showModal();
+}
+function replaceDlg(rel){
+  const row=bindings.find(b=>b.rel===rel);
+  api(`/api/choices?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(cur)}`).then(ch=>{
+    ask(`<h3>Replace ${esc(row.table)} for ${esc(cur)}</h3><div class="sub">now: ${esc(ch.current)}</div>
+      <input type="text" id="r_in" placeholder="type to filter, or paste another rider / /Game/… path" autocomplete="off">
+      <div class="pick" id="r_pick"></div>
+      <div class="help">Pick an existing asset or rider, or type a /Game/… path. If it does not exist you can create it as a copy.</div>`,
+     [{label:"Cancel"},{label:"Replace",cls:"p",fn:()=>doReplace(rel,$("#r_in").value.trim())}]);
+    const draw=()=>{const q=$("#r_in").value.toLowerCase();
+      const pk=ch.packages.filter(p=>p.toLowerCase().includes(q)).slice(0,150),rd=ch.riders.filter(p=>p.toLowerCase().includes(q)).slice(0,60);
+      $("#r_pick").innerHTML=(rd.length?`<small>other riders (copy their asset)</small>`+rd.map(r=>`<div>${esc(r)}</div>`).join(""):"")+
+        (pk.length?`<small>assets in the same place</small>`+pk.map(r=>`<div>${esc(r)}</div>`).join(""):"")+
+        `<small>browse everything else</small><div class="rb" data-scope="mod">📂 Browse mod folder (opens Explorer)…</div><div class="rb" data-scope="pak">📁 Browse from paks…</div>`;
+      $$("#r_pick div:not(.rb)").forEach(d=>d.onclick=()=>{$("#r_in").value=d.textContent;draw()});
+      $$("#r_pick .rb").forEach(d=>d.onclick=guard(async()=>{
+        if(d.dataset.scope==="mod"){   // the system file chooser, like Browse in Setup
+          const r=await api("/api/pick",{kind:"asset",startrel:startDir});
+          if(r.pkg){$("#r_in").value=r.pkg;draw()}
+          return}
+        browsing={scope:"pak",dir:startDir};$("#r_in").value="";browse()}));};
+    // folder browser inside the dialog: only assets, from the mod folder or the paks
+    const cp=String(ch.current||"").split(".")[0];
+    const startDir=cp.startsWith("/Game/")?"Content/"+cp.slice(6).split("/").slice(0,-1).join("/"):"Content";
+    let browsing=null;
+    const browse=guard(async()=>{
+      const q=$("#r_in").value.trim();
+      const r=await api(`/api/browse?scope=${browsing.scope}&assets=1&dir=${encodeURIComponent(browsing.dir)}&q=${encodeURIComponent(q)}&limit=300`);
+      const parts=browsing.dir.split("/");
+      let h=`<small>${browsing.scope==="mod"?"mod folder":"game paks"} - <a href="#" class="rx">back to the list</a></small><div style="padding:4px 10px">`+
+        parts.map((p,i)=>`<a href="#" data-d="${esc(parts.slice(0,i+1).join("/"))}">${esc(p)}</a>`).join(" / ")+"</div>";
+      if(parts.length>1)h+=`<div data-d="${esc(parts.slice(0,-1).join("/"))}">..</div>`;
+      h+=r.dirs.map(d=>`<div data-d="${esc(browsing.dir+"/"+d.name)}">📁 ${esc(d.name)} <span style="opacity:.6">(${d.count})</span></div>`).join("");
+      h+=r.items.filter(i=>i.asset).map(i=>`<div class="ra" data-pkg="${esc(i.pkg)}">${esc(q?i.pkg:i.name)}</div>`).join("");
+      if(r.truncated)h+=`<small>list cut - type in the box above to search</small>`;
+      $("#r_pick").innerHTML=h;
+      $$("#r_pick [data-d]").forEach(d=>d.onclick=e=>{e.preventDefault();browsing.dir=d.dataset.d;$("#r_in").value="";browse()});
+      $$("#r_pick .ra").forEach(d=>d.onclick=()=>{$("#r_in").value=d.dataset.pkg;browsing=null;draw()});
+      $("#r_pick .rx").onclick=e=>{e.preventDefault();browsing=null;$("#r_in").value="";draw()};
+    });
+    $("#r_in").oninput=()=>browsing?browse():draw();draw();$("#r_in").focus();
+  }).catch(e=>toast(e.message,"bad"));
+}
+async function doReplace(rel,target,copy){
+  if(!target){toast("Enter or pick a target","bad");return false}
+  const r=await api("/api/replace",{rel,key:cur,target,copy});
+  if(r.needs_choice){
+    dlg.close();
+    ask(`<h3>That asset does not exist</h3><div class="mono">${esc(r.pkg)}</div>
+      <p>Create it as a copy of this row's current asset?</p><div class="mono">${esc(r.old)}</div>
+      <p class="help"><b>This asset only</b>: one data asset under the new name (any length); keeps using the original's materials/textures.<br>
+      <b>Full set</b>: also copies its variant materials/textures. Needs a same-length variant number in the same folder (e.g. helmet_109 → helmet_900).</p>`,
+      [{label:"Cancel"},
+       {label:"Point anyway",fn:async()=>finish(await api("/api/replace",{rel,key:cur,target,copy:"none"}))},
+       {label:"Copy this asset only",cls:"p",fn:()=>doReplace(rel,target,"asset").then(()=>true)},
+       {label:"Copy full set",cls:"p",fn:()=>doReplace(rel,target,"set").then(()=>true)}]);
+    return false;
+  }
+  finish(r);
+}
+async function finish(r){
+  toast((r.created?`Created ${r.created} file(s).\n`:"")+"now: "+r.new+((r.notes||[]).length?"\n"+r.notes.join("\n"):"")+(r.warning?"\n"+r.warning:""),r.warning?"":"ok");
+  await selectPilot(cur);
+}
+const openAsset=guard(async pkg=>{
+  const r=await api("/api/edit",{pkg});
+  toast(r.launched?"Opened in your .uasset editor. Save there, then come back here and press Save.\n"+r.path
+     :"Extracted, but could not open it automatically"+(r.error?" ("+r.error+")":"")+".\nOpen this file yourself, edit and save it, then press Save here:\n"+r.path,r.launched?"ok":"bad");
+  await refreshChanges();
+});
+function editDlg(rel){
+  const row=bindings.find(b=>b.rel===rel);
+  api(`/api/members?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(cur)}`).then(ms=>{
+    ask(`<h3>Edit ${esc(row.table)} · ${esc(cur)}</h3>
+      <div class="help" style="margin:0 0 8px">Click an asset: it is extracted (if needed) and opened in UAssetGUI. Save there, then press Save in the header.</div>
+      <div class="pick" id="e_pick" style="max-height:380px"></div>`,[{label:"Close"}]);
+    $("#e_pick").innerHTML=ms.map(m=>`<div data-p="${esc(m.pkg)}" ${m.exists?"":'data-missing="1" style="opacity:.45;cursor:default"'}><b>${m.main?"★ ":"&nbsp;&nbsp;&nbsp;"}${esc(m.pkg.split("/").pop())}</b>
+      <span class="tag">${esc(m.kind)}</span> <span class="tag ${m.origin==="unsaved"?"warn":m.exists?"":"bad"}">${m.exists?esc(m.origin):"not found"}</span>${m.shared?' <span class="tag bad">shared folder</span>':""}</div>`).join("");
+    $$("#e_pick div").forEach(d=>d.onclick=()=>{if(d.dataset.missing)toast("That asset is not in the mod folder or the paks","bad");else openAsset(d.dataset.p)});
+  }).catch(e=>toast(e.message,"bad"));
+}
+window.addEventListener("focus",()=>refreshChanges());
+async function cloneRowDlg(rel){
+  const row=bindings.find(b=>b.rel===rel);let mode="asset",edited=false,name="";
+  const call=(dry)=>api("/api/clonerow",{rel,key:cur,mode,name:edited?name:"",dry_run:dry});
+  const first=await call(true).catch(e=>{toast(e.message,"bad");return null});if(!first)return;
+  mode=first.can_set?"set":"asset";name=first.new_name;
+  ask(`<h3>Clone ${esc(row.table)} for ${esc(cur)}</h3><div class="sub">now: ${esc(first.old)}</div>
+    <label style="display:block;margin:6px 0"><input type="radio" name="cm" value="set" ${first.can_set?"":"disabled"} ${mode==="set"?"checked":""}> Full set - also copy this variant's materials/textures ${first.can_set?"":'<span class="tag">only for customization_data</span>'}</label>
+    <label style="display:block;margin:6px 0"><input type="radio" name="cm" value="asset" ${mode==="asset"?"checked":""}> This asset only - keeps using the original's materials/textures</label>
+    <label style="display:block;margin:12px 0 4px;color:var(--dim);font-size:12px">New name (same folder; for a full set, only the variant number may differ)</label>
+    <input type="text" id="cl_name" value="${esc(name)}" autocomplete="off"><div class="help" id="cl_out"></div>`,
+   [{label:"Cancel"},{label:"Clone",cls:"p",fn:async()=>{const r=await call(false);if(r.problems.length){show(r);return false}
+      toast(`Created ${r.created} file(s).\nnow: ${r.target}`+(r.warnings.length?"\n"+r.warnings.join("\n"):""),"ok");await selectPilot(cur)}}]);
+  const show=r=>{$("#cl_out").innerHTML=r.problems.length?r.problems.map(p=>`<div style="color:var(--bad)">${esc(p)}</div>`).join(""):`Would create ${r.files} file(s).`+(r.notes||[]).map(n=>`<div>${esc(n)}</div>`).join("")};
+  const refresh=async()=>{try{show(await call(true))}catch(e){$("#cl_out").innerHTML=`<div style="color:var(--bad)">${esc(e.message)}</div>`}};
+  $$("input[name=cm]").forEach(r=>r.onchange=async()=>{mode=r.value;if(!edited){const p=await call(true);$("#cl_name").value=p.new_name}refresh()});
+  $("#cl_name").oninput=()=>{edited=true;name=$("#cl_name").value.trim();clearTimeout(window._ct);window._ct=setTimeout(refresh,250)};
+  show(first.mode===mode?first:await call(true));
+}
+function lookDlg(){
+  const cats=["bike","helmet","suit","gloves","boots","buttpatch","face"];
+  ask(`<h3>Copy look to ${esc(cur)}</h3><input type="text" id="l_in" list="l_dl" placeholder="rider to copy from" autocomplete="off">
+    <datalist id="l_dl">${pilots.filter(p=>p!==cur).map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
+    <div style="margin-top:12px">${cats.map(c=>`<label style="margin-right:14px"><input type="checkbox" class="l_c" value="${c}" checked> ${c}</label>`).join("")}</div>`,
+   [{label:"Cancel"},{label:"Copy",cls:"p",fn:async()=>{
+     const donor=$("#l_in").value.trim();if(!pilots.includes(donor)){toast("Pick a rider from the list","bad");return false}
+     const only=$$(".l_c").filter(c=>c.checked).map(c=>c.value);
+     const r=await api("/api/copylook",{key:cur,donor,only});
+     toast(r.length?`Changed ${r.length} row(s):\n`+r.map(x=>x.table).join(", "):"Nothing to change","ok");await selectPilot(cur)}}]);
+}
+function cloneDlg(){
+  ask(`<h3>Clone bike set for ${esc(cur)}</h3><div class="sub">${esc(info.target)}</div>
+    <label>New variant number (same length as the current one, e.g. ${esc(info.suggest||"906")})</label>
+    <input type="text" id="c_in" value="${esc(info.suggest||"")}" autocomplete="off">
+    <div class="help" id="c_out">Preview first, then clone.</div>`,
+   [{label:"Cancel"},
+    {label:"Preview",fn:async()=>{const r=await api("/api/clone",{key:cur,group:grp,tag:$("#c_in").value.trim(),dry_run:true});
+       $("#c_out").innerHTML=(r.problems.length?r.problems.map(p=>`<div style="color:var(--bad)">${esc(p)}</div>`).join(""):`Would create ${r.files} files.`)+
+       r.notes.map(n=>`<div>${esc(n)}</div>`).join("");return false}},
+    {label:"Clone",cls:"p",fn:async()=>{const r=await api("/api/clone",{key:cur,group:grp,tag:$("#c_in").value.trim()});
+       if(r.problems.length){$("#c_out").innerHTML=r.problems.map(p=>`<div style="color:var(--bad)">${esc(p)}</div>`).join("");return false}
+       toast(`Created ${r.files} files.\nnow: ${r.target}`+(r.warnings.length?"\n"+r.warnings.join("\n"):""),"ok");await selectPilot(cur)}}]);
+}
+
+// ---- database
+let dbLoaded=false,tables=[],tcur=null,offset=0,meta=null;
+const loadTables=guard(async()=>{tables=await api("/api/db/tables");dbLoaded=true;drawTables()});
+function drawTables(){
+  const q=$("#tsearch").value.toLowerCase();
+  $("#tlist").innerHTML=tables.filter(t=>t.name.toLowerCase().includes(q)).map(t=>`<div data-t="${esc(t.name)}" class="${t.name===tcur?"on":""}"><span>${esc(t.name)}</span><small>${t.rows}</small></div>`).join("");
+  $$("#tlist div").forEach(d=>d.onclick=()=>{tcur=d.dataset.t;offset=0;$("#qsearch").value="";drawTables();loadRows()});
+}
+$("#tsearch").oninput=drawTables;
+let qt;$("#qsearch").oninput=()=>{clearTimeout(qt);qt=setTimeout(()=>{offset=0;loadRows()},250)};
+$("#prev").onclick=()=>{if(offset>0){offset=Math.max(0,offset-200);loadRows()}};
+$("#next").onclick=()=>{if(meta&&offset+200<meta.total){offset+=200;loadRows()}};
+const loadRows=guard(async()=>{
+  meta=await api(`/api/db/rows?table=${encodeURIComponent(tcur)}&offset=${offset}&q=${encodeURIComponent($("#qsearch").value)}`);
+  $("#tname").textContent=tcur;$("#tcount").textContent=`${meta.total?offset+1:0}–${Math.min(offset+200,meta.total)} of ${meta.total}`;
+  const ki=meta.keycol?meta.cols.indexOf(meta.keycol):-1;
+  let h="<table><tr>"+(ki>=0?"<th></th>":"")+meta.cols.map((c,i)=>`<th title="${esc(meta.types[i])}">${esc(c)}</th>`).join("")+"</tr>";
+  for(const r of meta.rows){
+    const key=ki>=0?r[ki+1]:null;
+    h+=`<tr data-id="${r[0]}">`+(ki>=0?`<td class="ro"><div>${officialKeys.includes(key)?`<a href="#" class="gob" data-k="${esc(key)}" style="color:var(--acc)">bindings</a>`:""}</div></td>`:"");
+    h+=r.slice(1).map((v,i)=>`<td data-c="${esc(meta.cols[i])}" data-v="${esc(v??"")}" data-n="${v===null?1:0}"><div>${v===null?'<span style="color:var(--dim)">NULL</span>':esc(v)}</div></td>`).join("")+"</tr>";
+  }
+  $("#grid").innerHTML=h+"</table>";
+  $$(".gob").forEach(a=>a.onclick=guard(async e=>{e.preventDefault();await setGroup("official");tab("riders");selectPilot(a.dataset.k)}));
+});
+$("#grid").addEventListener("click",e=>{
+  const td=e.target.closest("td[data-c]");if(!td||td.querySelector("input"))return;
+  const old=td.dataset.v,inp=document.createElement("input");inp.value=old;td.firstChild.replaceWith(inp);inp.focus();inp.select();
+  let done=false;
+  const end=guard(async(save)=>{
+    if(done)return;done=true;
+    const txt=inp.value;
+    const show=v=>{const d=document.createElement("div");if(v===null||v===undefined){d.innerHTML='<span style="color:var(--dim)">NULL</span>'}else d.textContent=v;inp.replaceWith(d)};
+    if(!save||txt===old){show(old===""&&td.dataset.n==="1"?null:old);return}
+    try{const r=await api("/api/db/update",{table:tcur,rowid:td.closest("tr").dataset.id,col:td.dataset.c,value:txt});
+      td.dataset.v=r.value??"";td.dataset.n=r.value===null?"1":"0";show(r.value);td.classList.add("ok");setTimeout(()=>td.classList.remove("ok"),900)}
+    catch(x){show(old);td.classList.add("err");setTimeout(()=>td.classList.remove("err"),1400);throw x}
+  });
+  inp.onkeydown=k=>{if(k.key==="Enter")end(true);else if(k.key==="Escape")end(false);else if(k.key==="Tab"){end(true)}};
+  inp.onblur=()=>end(true);
+});
+
+dlg.addEventListener("click",e=>{if(e.target===dlg)dlg.close()});
+loadState().catch(e=>toast(e.message,"bad"));
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+const {JSDOM}=require("jsdom");const fs=require("fs");
+const html=fs.readFileSync("/home/claude/mgp_editor/webui.html","utf8");const calls=[];
+const dom=new JSDOM(html,{runScripts:"dangerously",pretendToBeVisual:true,url:"http://127.0.0.1:8765/",beforeParse(w){
+ w.HTMLDialogElement.prototype.showModal=function(){this.open=true};w.HTMLDialogElement.prototype.close=function(){this.open=false};
+ w.TOKEN="t";
+ w.fetch=async(p,o)=>{calls.push(p+(o&&o.body?" "+o.body:""));const j=x=>({ok:true,status:200,json:async()=>x});
+  if(p.startsWith("/api/state"))return j({open:true,mod_folder:"x",paks_dir:"",include_patch:true,paks:true});
+  if(p.startsWith("/api/hud/scan"))return j({started:true});if(p.startsWith("/api/pak/status")&&!global.imp)return j({running:false,lines:["Done"],next:1,title:"Scanning",error:null,result:{summary:"x",items:[{key:"f/A",name:"HUDLeaderboardWidgetBP",files:["a.uasset","a.uexp"],dest:"Content/x/A",replaces:"game original",warn:false,note:"",ok:true,crash:[],missing_deps:["/Game/a/Foo"]},{key:"f/P",name:"HUDPenaltyWidgetBP",files:["p.uasset"],dest:"Content/x/P",replaces:"game original",warn:true,note:"",ok:true,crash:["InvalidLapWidget"],missing_deps:[]},{key:"f/U",name:"Unknown",files:["u.uasset"],dest:"",replaces:"new",warn:false,note:"no place",ok:false,crash:[],missing_deps:[]}]}});
+  if(p.startsWith("/api/hud/import")){global.imp=1;return j({started:true})}if(p.startsWith("/api/pak/status"))return j({running:false,lines:["Done"],next:1,result:{summary:"2 items, 4 files staged"},error:null,title:"Importing"});
+  return j({files:[],changes:[]})};
+ w.addEventListener("error",e=>console.log("PAGE ERROR:",e.message));}});
+const w=dom.window;
+setTimeout(async()=>{const d=w.document,s=ms=>new Promise(r=>setTimeout(r,ms));
+ w.eval('ST.open=true;tab("hud")');await s(100);d.querySelector("#hu_src").value="C:/sbk";
+ d.querySelector("#hi_scan").click();await s(700);console.log(d.querySelector("#hi_sum").textContent);
+ console.log("checked:",[...d.querySelectorAll("#hi_out input[data-i]")].map(i=>i.checked+"/"+i.disabled).join(" "));
+ d.querySelectorAll("#hi_out input[data-i]")[1].checked=true;d.querySelector("#hi_go").click();await s(200);
+ const dl=d.querySelector("dialog");console.log("dialog:",dl.open,dl.textContent.slice(0,90));
+ [...dl.querySelectorAll("button")].find(b=>b.textContent==="Import anyway").click();await s(300);
+ console.log(calls.filter(c=>c.includes("hud/import")));
+ d.querySelector("#hi_none").click();d.querySelector("#hi_out input[data-i='0']").checked=true;d.querySelectorAll("#hi_out input[data-i]")[1].checked=true;d.querySelector("#hi_go").click();await s(200);
+ console.log("dialog for non-warn:",dl.open,"| imports:",calls.filter(c=>c.includes("hud/import")).length);process.exit(0)},300);

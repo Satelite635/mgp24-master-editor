@@ -1,0 +1,14 @@
+# Changelog (versions shipped as zips; bump `VERSION` in webui.py AND `HV` in webui.html)
+
+- **v72** Paks re-read automatically when a .pak is added/replaced/removed (fixes "bad magic" after repacking; no restart needed). HUD import never imports `ui/Fonts` files (shown greyed out; "Untick fonts" button removed); penalty files stay ticked. Speed: indexed + cached pak folder lookups, crash check scans only loose mod files, progress polling no longer waits on the global lock, HTTP keep-alive.
+- **v71** Graft button always runs the hide step (idempotent), un-collapses grafted widgets, popup lists changed widgets. Fix for orange "+1.356" box left visible when the page was already grafted.
+- **v70** HUD import: "Untick fonts" button; "Select all" skips `/ui/Fonts/` (SBK Font assets crash GP24).
+- **v69** Fonts list shows scanned count, skipped assets + reasons, and origin (mod folder / game original).
+- **v68** Graft and swap buttons always act on `RaceHud_BP` (`_race_target`); error messages name file + classes found.
+- **v67** Swap-positions button is a toggle (works from either arrangement).
+- **v66** "Replace fonts with TT Supermolot" (`/api/fonts/list`, `/api/fonts/apply`, `hudskin.retarget_font`).
+- **v65** "Swap stewards box / jump-start & long-lap positions" (`hudskin.swap_widget_types`, `/api/hud/swappos`).
+- **v64** Graft also retypes `WarningHUDSmallWidget` → `PlayerAlertsHUDWidget_BP_C`; hides other warn widgets.
+- **v63** "Use GP24's penalty widget": `retype_widget` (`PenaltiesInfoWidgetManagerBP_C` → `WB_RacePenaltiesWidgetContainer_C`), `PakSet.read_base`.
+- **v55–v62** Port-audio Gain dB; HUD "Show / hide widgets" (Visibility editor); "Untick penalty / warning"; extended crash check (any missing `/Script/<module>` class, base paks only); faster `staged_files`; Save no longer blocked during scans/crash checks; import result reports changed vs identical; page/server version mismatch banner; rename to MGP24 Master Editor; `[slow]` request logging.
+- Earlier: bindings/clone/replace, audio port, locres, browse, replacement sheet, DB editor, pack mod, HUD skin + import, background jobs (see README.txt).
