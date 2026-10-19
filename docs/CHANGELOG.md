@@ -1,5 +1,6 @@
 # Changelog (versions shipped as zips; bump `VERSION` in webui.py AND `HV` in webui.html)
 
+- **v73** Riding style: rider page has a "riding style" section for `Content/assets/data/datatables/Anim/RidingStyle_DT` (`mgp_core.StyleTable`, `/api/style`): edit the 8 fields, copy from a preset (Balanced/Centered/ElbowOut/ShouldersOut/BodyOut/OldSchool) or another rider, add a row for entries that lack one. "Copy look" has an optional "riding style" box. Unverified in game.
 - **v72** Paks re-read automatically when a .pak is added/replaced/removed (fixes "bad magic" after repacking; no restart needed). HUD import never imports `ui/Fonts` files (shown greyed out; "Untick fonts" button removed); penalty files stay ticked. Speed: indexed + cached pak folder lookups, crash check scans only loose mod files, progress polling no longer waits on the global lock, HTTP keep-alive.
 - **v71** Graft button always runs the hide step (idempotent), un-collapses grafted widgets, popup lists changed widgets. Fix for orange "+1.356" box left visible when the page was already grafted.
 - **v70** HUD import: "Untick fonts" button; "Select all" skips `/ui/Fonts/` (SBK Font assets crash GP24).

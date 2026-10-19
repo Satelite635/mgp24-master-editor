@@ -16,6 +16,7 @@ STAGING = "_mgp_unsaved"
 DT_REL = "Content/assets/graphics/bindings/Vehicles/Official/DT_BikeOfficial"
 DB_REL = "Content/assets/data/db/NoCook/db.sqlite3"
 BIND_DIR = "Content/assets/graphics/bindings"
+STYLE_REL = "Content/assets/data/datatables/Anim/RidingStyle_DT"
 SIDECARS = (".uasset", ".uexp", ".ubulk")
 
 
@@ -268,6 +269,117 @@ class BindingTable:
             self.ua.append_name(new_pkg)
         new_idx = self.ua.append_name(new_obj_path)
         struct.pack_into("<i", self.uexp, off, new_idx)
+
+    def save(self, uasset_path, uexp_path):
+        with open(uasset_path, "wb") as f:
+            f.write(self.ua.to_bytes())
+        with open(uexp_path, "wb") as f:
+            f.write(bytes(self.uexp))
+
+
+# ------------------------------------------------------------ riding style table
+class StyleTable:
+    """RidingStyle_DT: one row per rider key (same keys as the binding tables), each a fixed set of
+    Int/Float properties (RidingStyle, SubRidingStyle, StartLeg, LegOut, ...). Rows without '_'
+    (Balanced, Centered, ElbowOut, ShouldersOut, BodyOut, OldSchool) are the game's presets."""
+    FMT = {"IntProperty": "<i", "FloatProperty": "<f"}
+
+    def __init__(self, uasset_bytes, uexp_bytes):
+        self.ua = UAsset(uasset_bytes)
+        self.uexp = bytearray(uexp_bytes)
+        self._parse()
+
+    def _fname(self, p):
+        i, n = struct.unpack_from("<ii", self.uexp, p)
+        t = self.ua.names[i]["text"]
+        return (t + "_%d" % (n - 1) if n else t), p + 8
+
+    def _parse(self):
+        d = self.uexp
+        self.rows, self.order = {}, []                 # key -> {prop: (type, value_off)}; row start/end
+        p = 0
+        while True:                                    # object properties (RowStruct)
+            name, p = self._fname(p)
+            if name == "None":
+                break
+            typ, p = self._fname(p)
+            if typ != "ObjectProperty":
+                raise MgpError("RidingStyle_DT: unexpected %s %s in header" % (typ, name))
+            p += 8 + 1 + struct.unpack_from("<i", d, p)[0]
+        p += 4                                         # ObjectGuid flag
+        self.count_off = p
+        count = struct.unpack_from("<i", d, p)[0]; p += 4
+        for _ in range(count):
+            start = p
+            row, p = self._fname(p)
+            props = {}
+            while True:
+                name, p = self._fname(p)
+                if name == "None":
+                    break
+                typ, p = self._fname(p)
+                size = struct.unpack_from("<i", d, p)[0]; p += 8 + 1
+                if typ not in self.FMT or size != 4:
+                    raise MgpError("RidingStyle_DT: %s.%s is %s (%d bytes) - layout not understood" % (row, name, typ, size))
+                props[name] = (typ, p)
+                p += size
+            self.rows[row] = props
+            self.order.append((row, start, p))
+        self.rows_end = p
+        if struct.unpack_from("<I", d, p)[0] != PKG_TAG:
+            raise MgpError("RidingStyle_DT footer mismatch - layout not understood")
+
+    def presets(self):
+        return [r for r in self.rows if "_" not in r]
+
+    def values(self, key):
+        out = {}
+        for name, (typ, off) in self.rows[key].items():
+            v = struct.unpack_from(self.FMT[typ], self.uexp, off)[0]
+            out[name] = v if typ == "IntProperty" else round(v, 4)
+        return out
+
+    def types(self, key):
+        return {n: t for n, (t, _) in self.rows[key].items()}
+
+    def set_values(self, key, vals):
+        """Write the given {prop: number}; returns {prop: (old, new)} for what changed."""
+        if key not in self.rows:
+            raise MgpError("no riding-style row for " + key)
+        old, changed = self.values(key), {}
+        for name, v in vals.items():
+            if name not in self.rows[key]:
+                raise MgpError("unknown riding-style field: " + name)
+            typ, off = self.rows[key][name]
+            v = int(v) if typ == "IntProperty" else float(v)
+            struct.pack_into(self.FMT[typ], self.uexp, off, v)
+            new = self.values(key)[name]
+            if new != old[name]:
+                changed[name] = (old[name], new)
+        return changed
+
+    def add_row(self, key, donor):
+        """Append a row for `key` that copies `donor`'s values (export size and bulk offset follow)."""
+        if key in self.rows:
+            raise MgpError("%s already has a riding-style row" % key)
+        if donor not in self.rows:
+            raise MgpError("no riding-style row for " + donor)
+        texts = self.ua.texts()
+        idx = texts.index(key) if key in texts else self.ua.append_name(key)
+        _, start, end = next(o for o in self.order if o[0] == donor)
+        blob = struct.pack("<ii", idx, 0) + bytes(self.uexp[start + 8:end])
+        at = self.rows_end
+        self.uexp[at:at] = blob
+        struct.pack_into("<i", self.uexp, self.count_off, struct.unpack_from("<i", self.uexp, self.count_off)[0] + 1)
+        eo = self.ua._get("exportoff")
+        if self.ua._get("exportcount") != 1:
+            raise MgpError("RidingStyle_DT: expected one export")
+        sz = struct.unpack_from("<q", self.ua.data, eo + 28)[0]
+        struct.pack_into("<q", self.ua.data, eo + 28, sz + len(blob))
+        bulk = self.ua._get("bulk", "<q")
+        if bulk:
+            self.ua._set("bulk", bulk + len(blob), "<q")
+        self._parse()
 
     def save(self, uasset_path, uexp_path):
         with open(uasset_path, "wb") as f:
@@ -546,7 +658,7 @@ class Project:
         self.reload_bindings()
 
     def reload_bindings(self):
-        self._tables, self._names = {}, None
+        self._tables, self._names, self._style = {}, None, None
         self.dt = self.table(DT_REL)                 # the bike table (DT_BikeOfficial)
 
     def refresh_paks(self):
@@ -586,6 +698,19 @@ class Project:
             if key in t.rows:
                 out.append((rel, category(rel), t.target(key)))
         return out
+
+    # ---- riding style (RidingStyle_DT, keyed like the binding tables)
+    def style(self):
+        if self._style is None:
+            self._style = StyleTable(self.src.read(STYLE_REL + ".uasset"), self.src.read(STYLE_REL + ".uexp"))
+        return self._style
+
+    def save_style(self):
+        stem = self.src.loose(STYLE_REL)
+        os.makedirs(os.path.dirname(stem), exist_ok=True)
+        for e in (".uasset", ".uexp"):
+            self.backup(stem + e)
+        self.style().save(stem + ".uasset", stem + ".uexp")
 
     def save_table(self, rel):
         stem = self.src.loose(rel)

@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v72"
+VERSION = "v73"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -1396,7 +1396,52 @@ def make_api(S):
         P = S.need()
         cats = set(b["only"]) if b.get("only") else None
         ch = P.copy_look(b["key"], b["donor"], cats)
-        return [dict(table=tname(rel), old=o, new=n) for rel, o, n in ch]
+        out = [dict(table=tname(rel), old=o, new=n) for rel, o, n in ch]
+        if cats and "style" in cats:                 # riding style lives in its own table (RidingStyle_DT)
+            st = P.style()
+            if b["donor"] in st.rows:
+                if b["key"] not in st.rows:
+                    st.add_row(b["key"], b["donor"]); changed = True
+                else:
+                    changed = bool(st.set_values(b["key"], st.values(b["donor"])))
+                if changed:
+                    P.save_style()
+                    out.append(dict(table="RidingStyle_DT", old="", new=b["donor"]))
+        return out
+
+    # ---- riding style (RidingStyle_DT)
+    def style_get(q, b):
+        P = S.need()
+        key = q["key"][0]
+        try:
+            st = P.style()
+        except C.MgpError as e:
+            return dict(error=str(e))
+        styles = {st.values(p)["RidingStyle"]: p for p in st.presets() if "RidingStyle" in st.rows[p]}
+        sources = st.presets() + sorted(r for r in st.rows if "_" in r and r != key)
+        if key not in st.rows:
+            return dict(exists=False, sources=sources, styles=styles)
+        return dict(exists=True, values=st.values(key), types=st.types(key), sources=sources, styles=styles,
+                    origin=P.src.origin(C.STYLE_REL + ".uasset") if hasattr(P.src, "origin") else "")
+
+    def style_set(q, b):
+        """{key, values:{field:number}} edits the row; {key, donor} copies a preset's/rider's row (adds the row if missing)."""
+        P = S.need()
+        st, key = P.style(), b["key"]
+        if b.get("donor"):
+            if b["donor"] not in st.rows:
+                raise C.MgpError("no riding-style row named " + b["donor"])
+            if key not in st.rows:
+                st.add_row(key, b["donor"])
+                P.save_style()
+                return dict(added=True, changed={})
+            vals = st.values(b["donor"])
+        else:
+            vals = b.get("values") or {}
+        ch = st.set_values(key, vals)
+        if ch:
+            P.save_style()
+        return dict(added=False, changed={k: list(v) for k, v in ch.items()})
 
     def clone(q, b):
         P = S.need()
@@ -1476,7 +1521,7 @@ def make_api(S):
         ("POST", "/api/settings"): settings, ("GET", "/api/changes"): changes, ("POST", "/api/save"): save,
         ("POST", "/api/discard"): discard, ("POST", "/api/quit"): quit_, ("POST", "/api/open"): open_, ("GET", "/api/pilots"): pilots,
         ("GET", "/api/bindings"): bindings, ("GET", "/api/choices"): choices, ("POST", "/api/replace"): replace,
-        ("POST", "/api/copylook"): copy_look, ("POST", "/api/clone"): clone, ("GET", "/api/describe"): describe_,
+        ("POST", "/api/copylook"): copy_look, ("GET", "/api/style"): style_get, ("POST", "/api/style"): style_set, ("POST", "/api/clone"): clone, ("GET", "/api/describe"): describe_,
         ("GET", "/api/db/tables"): db_tables, ("GET", "/api/db/rows"): db_rows, ("POST", "/api/db/update"): db_update,
     }
 

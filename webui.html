@@ -502,7 +502,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v72";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v73";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   $("#where").textContent=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";
   if(ST.open){await loadPilots();const n=await refreshChanges();if(n&&!recoveryAsked){recoveryAsked=true;recoverDlg(n)}}else tab("setup");
@@ -548,7 +548,7 @@ function drawPilots(){
 $("#rsearch").oninput=drawPilots;
 const selectPilot=guard(async k=>{
   cur=k;drawPilots();
-  [bindings,info]=await Promise.all([api("/api/bindings?group="+grp+"&key="+encodeURIComponent(k)),api("/api/describe?group="+grp+"&key="+encodeURIComponent(k))]);
+  [bindings,info,style]=await Promise.all([api("/api/bindings?group="+grp+"&key="+encodeURIComponent(k)),api("/api/describe?group="+grp+"&key="+encodeURIComponent(k)),api("/api/style?key="+encodeURIComponent(k)).catch(e=>({error:e.message}))]);
   drawPilot();
 });
 function drawPilot(){
@@ -567,7 +567,9 @@ function drawPilot(){
     }
     h+="</table>";
   }
+  h+=styleHtml();
   $("#rpane").innerHTML=h;
+  styleWire();
   $$("#rpane button[data-rel]").forEach(b=>b.onclick=()=>replaceDlg(b.dataset.rel));
   $$("#rpane a.sug").forEach(a=>a.onclick=guard(async e=>{e.preventDefault();finish(await api("/api/replace",{rel:a.dataset.rel,key:cur,target:a.dataset.p}))}));
   $$("#rpane button[data-clone]").forEach(b=>b.onclick=()=>cloneRowDlg(b.dataset.clone));
@@ -683,11 +685,38 @@ async function cloneRowDlg(rel){
   $("#cl_name").oninput=()=>{edited=true;name=$("#cl_name").value.trim();clearTimeout(window._ct);window._ct=setTimeout(refresh,250)};
   show(first.mode===mode?first:await call(true));
 }
+let style=null;
+function styleHtml(){
+  if(!style)return"";
+  let h=`<div class="cat">riding style</div>`;
+  if(style.error)return h+`<div class="help" style="color:var(--bad)">RidingStyle_DT: ${esc(style.error)}</div>`;
+  const src=`<input type="text" id="st_src" list="st_dl" placeholder="preset or rider to copy from" autocomplete="off" style="width:300px">
+    <datalist id="st_dl">${style.sources.map(p=>`<option value="${esc(p)}">`).join("")}</datalist> <button class="b" id="st_copy">${style.exists?"Copy style":"Add row (copy from)"}</button>`;
+  if(!style.exists)return h+`<div class="help">No row for this entry in RidingStyle_DT (the game will use its default). Add one by copying a preset or another rider.</div><div class="bar">${src}</div>`;
+  const v=style.values,t=style.types;
+  h+=`<table><tr><th style="width:210px">Field</th><th>Value</th></tr>`;
+  for(const k of Object.keys(v)){
+    const inp=k==="RidingStyle"?`<select class="st_f" data-k="${esc(k)}">${[...new Set([...Object.keys(style.styles).map(Number),v[k]])].sort((a,b)=>a-b).map(n=>`<option value="${n}" ${n===v[k]?"selected":""}>${n} – ${esc(style.styles[n]||"(no preset)")}</option>`).join("")}</select>`
+      :`<input type="text" class="st_f" data-k="${esc(k)}" value="${esc(String(v[k]))}" style="width:120px"> <span class="help">${t[k]==="IntProperty"?"whole number":"decimal"}</span>`;
+    h+=`<tr><td class="mono">${esc(k)}</td><td>${inp}</td></tr>`;
+  }
+  return h+`</table><div class="bar"><button class="b p" id="st_apply">Apply style edits</button> ${src} <span class="tag ${style.origin==="unsaved"?"warn":"ok"}">${esc(style.origin||"")}</span></div>`;
+}
+function styleWire(){
+  const c=$("#st_copy");if(c)c.onclick=guard(async()=>{const donor=$("#st_src").value.trim();
+    if(!style.sources.includes(donor)){toast("Pick a preset or rider from the list","bad");return}
+    const r=await api("/api/style",{key:cur,donor});toast(r.added?"Riding-style row added (copied from "+donor+")":Object.keys(r.changed).length?"Changed: "+Object.keys(r.changed).join(", "):"Nothing to change","ok");await selectPilot(cur)});
+  const a=$("#st_apply");if(a)a.onclick=guard(async()=>{const values={};
+    for(const f of $$(".st_f")){const n=Number(f.value);if(f.value.trim()===""||!isFinite(n)){toast(f.dataset.k+": not a number","bad");return}
+      if(style.types[f.dataset.k]==="IntProperty"&&!Number.isInteger(n)){toast(f.dataset.k+": must be a whole number","bad");return}values[f.dataset.k]=n}
+    const r=await api("/api/style",{key:cur,values});const k=Object.keys(r.changed);
+    toast(k.length?"Changed: "+k.map(x=>`${x} ${r.changed[x][0]} → ${r.changed[x][1]}`).join(", "):"Nothing to change","ok");await selectPilot(cur)});
+}
 function lookDlg(){
-  const cats=["bike","helmet","suit","gloves","boots","buttpatch","face"];
+  const cats=["bike","helmet","suit","gloves","boots","buttpatch","face","style"];
   ask(`<h3>Copy look to ${esc(cur)}</h3><input type="text" id="l_in" list="l_dl" placeholder="rider to copy from" autocomplete="off">
     <datalist id="l_dl">${pilots.filter(p=>p!==cur).map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
-    <div style="margin-top:12px">${cats.map(c=>`<label style="margin-right:14px"><input type="checkbox" class="l_c" value="${c}" checked> ${c}</label>`).join("")}</div>`,
+    <div style="margin-top:12px">${cats.map(c=>`<label style="margin-right:14px"><input type="checkbox" class="l_c" value="${c}" ${c==="style"?"":"checked"}> ${c==="style"?"riding style":c}</label>`).join("")}</div>`,
    [{label:"Cancel"},{label:"Copy",cls:"p",fn:async()=>{
      const donor=$("#l_in").value.trim();if(!pilots.includes(donor)){toast("Pick a rider from the list","bad");return false}
      const only=$$(".l_c").filter(c=>c.checked).map(c=>c.value);

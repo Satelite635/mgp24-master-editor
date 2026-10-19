@@ -13,6 +13,14 @@
 - Optionally move heavy actions (Port audio, extract) onto the background job log.
 - Slot-position copy tool for the 8 widgets the two pages share (leaderboard, race pace, raise-bike + a few dev ones).
 
+## Riding style (v73) — waiting on Faizal
+- Check in game that an edited/copied riding style changes the rider's animation, and that a row added for a rider without one doesn't crash. Field meanings (SubRidingStyle 0-6, RidingStyle 6 has no preset row, LegOutType, StartLeg -1/0/1) are not known — only numbers shown.
+
+## Feature ideas agreed to keep (Oct 19)
+- Customer pack export (one-click pak + readme), before/after preview sheet, `~mods` conflict checker.
+- Pre-pack crash check (refuse to pack on missing `/Script` classes / SBK Fonts), snapshots/undo, pak diff, HUD widget-tree viewer.
+- Cross-game: compatibility report for another Milestone game's pak/map (what's missing in GP24), generalized `/Script/motogpXX` → `/Script/motogp24` import retyping, rider/team data editor, bike sound port per bike, gear port from other games. Track import: visual-only swaps realistic; full tracks need AI lines/timing/DataTables + game-specific Blueprints.
+
 ## Feature requests not started
 - **Track variant import from GP22** (same layout, different variant): needs the track name and GP22 files from Faizal; proposed a diff-based audit tool (compare GP22 vs GP24 assets to show what differs).
 - **SBK-style weekend format** and full-season helpers.
