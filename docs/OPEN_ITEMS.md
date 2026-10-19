@@ -9,7 +9,7 @@
 ## Tool improvements worth doing
 - ~~Reopen/refresh `PakSet` after Pack mod~~ done in v72 (auto refresh); unconfirmed in game.
 - Make HUD import smarter: skip fonts and penalty/warning files by default; offer to run the graft right after import.
-- Crash scan: detect SBK-format Font assets (serial size mismatch) — currently only missing `/Script` classes are detected.
+- ~~Crash scan: detect SBK-format Font assets~~ v74 (compares Font native-part size with the game's Fonts) — **unverified on real files**; ask Faizal to run "Check mod" on a mod that contains an SBK Font.
 - Optionally move heavy actions (Port audio, extract) onto the background job log.
 - Slot-position copy tool for the 8 widgets the two pages share (leaderboard, race pace, raise-bike + a few dev ones).
 
@@ -19,7 +19,7 @@
 ## Feature ideas agreed to keep (Oct 19)
 - (Rider/team data editor dropped: the Database + Localization tabs already cover it.)
 - Customer pack export (one-click pak + readme), before/after preview sheet, `~mods` conflict checker.
-- Pre-pack crash check (refuse to pack on missing `/Script` classes / SBK Fonts), snapshots/undo, pak diff, HUD widget-tree viewer.
+- ~~Pre-pack crash check~~ (v74), snapshots/undo, pak diff, HUD widget-tree viewer.
 - Cross-game: compatibility report for another Milestone game's pak/map (what's missing in GP24), generalized `/Script/motogpXX` → `/Script/motogp24` import retyping, bike sound port per bike, gear port from other games. Track import: visual-only swaps realistic; full tracks need AI lines/timing/DataTables + game-specific Blueprints.
 
 ## Feature requests not started

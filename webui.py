@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v73"
+VERSION = "v74"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -261,6 +261,12 @@ def make_api(S):
         if os.path.exists(dest) and not b.get("overwrite"):
             return dict(exists=True, path=dest)
         def work(log):
+            if not b.get("force") and P.paks:
+                log("Crash check before packing...")
+                block, warn, n = _crash_scan(P, log)
+                if block:
+                    return dict(blocked=block, warn=warn, checked=n,
+                                summary="Not packed: %d asset(s) would crash the game" % len(block))
             try:
                 n, size = PW.write_pak(dest, files, log)
             except PermissionError:
@@ -469,6 +475,8 @@ def make_api(S):
     def reveal(q, b):
         """Open a folder in the file manager; for a file, open its folder with the file selected."""
         path = (b.get("path") or "").strip().strip('"')
+        if not path and b.get("rel"):                            # a file in the mod folder
+            path = os.path.join(S.need().real_root, *b["rel"].split("/"))
         if not path and b.get("what") == "pak":                 # the Pack mod default output folder
             path = os.path.join(S.need().real_root, "_mgp_pak")
             os.makedirs(path, exist_ok=True)
@@ -812,27 +820,91 @@ def make_api(S):
         _job_start("Scanning", work)
         return dict(started=True)
 
+    def _font_tail(a):
+        """Bytes after the tagged properties of a Font export (its native part), or None if not a Font."""
+        for i, e in enumerate(a.exports):
+            if e["cls"] == "Font":
+                x = a.parse_export(i)
+                return x["size_end"] - x["end"]
+        return None
+
+    def _game_font_tail(P):
+        """Native-part size of the game's own Font assets (base paks only); None if none could be read."""
+        key = tuple(id(r) for r in P.paks.base_readers()) if P.paks else None
+        cache = getattr(S, "fontcache", None)
+        if cache and cache[0] == key:
+            return cache[1]
+        tails = {}
+        if P.paks:
+            prefix = P.paks.project + "/content/assets/ui/fonts/"
+            for r in (P.paks.base_readers() or P.paks.readers):
+                for low in r.files:
+                    if low.startswith(prefix) and low.endswith(".uasset") and len(tails) < 400:
+                        try:
+                            t = _font_tail(U.Asset(r.read(low), r.read(low[:-7] + ".uexp")))
+                        except Exception:
+                            continue
+                        if t is not None:
+                            tails[t] = tails.get(t, 0) + 1
+        best = max(tails, key=tails.get) if tails else None
+        S.fontcache = (key, best)
+        return best
+
+    FOREIGN_RE = __import__("re").compile(r"^(sbk|motogp(?!24$)|ride\d|mxgp)", __import__("re").I)
+
+    def _crash_scan(P, log):
+        """Loose mod assets that will (block) or may (warn) crash the game.
+        block: imports from another game's C++ module (e.g. /Script/sbk1); a UI asset needing a motogp24 class no
+               game UI asset uses; a Font whose native part differs from the game's Fonts (SBK Font: 'Serial size mismatch').
+        warn:  a non-UI asset needing a motogp24 class no game *UI* asset uses (the class list comes from UI assets
+               only, so this can be a false alarm)."""
+        known = _game_classes(P, log)
+        font_tail = _game_font_tail(P)
+        rels = P.src.find("Content", ".uasset", loose_only=True)     # modded = loose files
+        log("Checking %d modded asset(s)%s..." % (len(rels), "" if known else " (game classes unknown - class check skipped)"))
+        block, warn = [], []
+        for r in rels:
+            try:
+                ux = r[:-7] + ".uexp"
+                a = U.Asset(P.src.read(r), P.src.read(ux) if P.src.exists(ux) else b"")
+                refs = _script_refs(a)
+            except Exception:
+                continue
+            hard, soft = [], []
+            ui = "/content/assets/ui/" in r.lower()
+            for m in sorted(x for x in refs if ":" in x):
+                mod = m.split(":", 1)[0]
+                if FOREIGN_RE.match(mod):
+                    hard.append(m)
+                elif known and ("@" + mod.lower()) not in known:
+                    (hard if ui else soft).append(m)
+            if known:
+                (hard if ui else soft).extend(m for m in _missing(refs, known) if ":" not in m)
+            if font_tail is not None and a.uexp:
+                try:
+                    t = _font_tail(a)
+                except Exception:
+                    t = None
+                if t is not None and t != font_tail:
+                    hard.append("Font made by another game (native part %d bytes, the game's Fonts have %d)" % (t, font_tail))
+            if hard:
+                block.append(dict(file=r, missing=hard, origin=P.src.origin(r)))
+                log("CRASH RISK: %s needs %s" % (r, ", ".join(hard)))
+            elif soft:
+                warn.append(dict(file=r, missing=soft, origin=P.src.origin(r)))
+                log("maybe: %s uses %s (not seen in the game's UI assets)" % (r, ", ".join(soft)))
+        log("Done: %d of %d asset(s) will crash the game, %d to double-check" % (len(block), len(rels), len(warn)))
+        return block, warn, len(rels)
+
     def hud_modscan(q, b):
         """Assets in the mod folder/staging that need a C++ class this game lacks (what causes 'Could not find SuperStruct')."""
         P = S.need()
 
         def work(log):
-            known = _game_classes(P, log)
-            if not known:
+            if not P.paks:
                 raise C.MgpError("game paks not available to learn the game's classes")
-            rels = P.src.find("Content", ".uasset", loose_only=True)     # modded = loose files; no need to stat every pak asset
-            log("Checking %d modded asset(s)..." % len(rels))
-            bad = []
-            for r in rels:
-                try:
-                    miss = _missing(_script_refs(U.Asset(P.src.read(r), b"")), known)
-                except Exception:
-                    continue
-                if miss:
-                    bad.append(dict(file=r, missing=miss, origin=P.src.origin(r)))
-                    log("CRASH RISK: %s needs %s" % (r, ", ".join(miss)))
-            log("Done: %d of %d asset(s) need a class the game lacks" % (len(bad), len(rels)))
-            return dict(bad=bad, checked=len(rels))
+            block, warn, n = _crash_scan(P, log)
+            return dict(bad=block, warn=warn, checked=n)
         _job_start("Checking mod", work)
         return dict(started=True)
 

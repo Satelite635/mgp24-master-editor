@@ -223,10 +223,10 @@ function packDlg(){
     <div class="pathrow" style="margin-top:8px"><input type="text" id="pk_dir" placeholder="Output folder (empty = a _mgp_pak folder inside your mod folder)" value="${esc(lsGet("pk_dir"))}" autocomplete="off"><button class="b" id="pk_pick">Browse</button><button class="b" id="pk_open">Open in Explorer</button></div>`,
     [{label:"Cancel"},{label:"Pack",cls:"p",fn:async()=>{
       const name=$("#pk_name").value,folder=$("#pk_dir").value;lsSet("pk_name",name);lsSet("pk_dir",folder);
-      const send=async(overwrite)=>{const r=await api("/api/pak",{name,folder,overwrite});
+      const send=async(overwrite,force)=>{const r=await api("/api/pak",{name,folder,overwrite,force});
         if(r.exists){ask(`<h3>Pak already exists</h3><div class="sub">${esc(r.path)}</div><div class="sub">Replace it, or go back and choose another name?</div>`,
-          [{label:"Cancel",fn:()=>{packDlg();return false}},{label:"Replace",cls:"p",fn:async()=>{await send(true)}}]);return true}
-        packTrack()};
+          [{label:"Cancel",fn:()=>{packDlg();return false}},{label:"Replace",cls:"p",fn:async()=>{await send(true,force)}}]);return true}
+        packTrack("Packing",r=>{if(r.result&&r.result.blocked)crashDlg(r.result,()=>send(overwrite,true))})};
       if(await send(false))return false}}]);
   $("#pk_pick").onclick=guard(async()=>{const r=await api("/api/pick",{kind:"folder",initial:$("#pk_dir").value});if(r.path)$("#pk_dir").value=r.path});
   $("#pk_open").onclick=guard(async()=>{await api("/api/reveal",{path:$("#pk_dir").value,what:"pak"})});
@@ -241,6 +241,13 @@ function pkShowLog(){
   const upd=()=>{const e=$("#pk_log");if(!e)return;const stick=e.scrollTop+e.clientHeight>=e.scrollHeight-20;e.textContent=pkText();if(stick)e.scrollTop=e.scrollHeight};
   upd();const t=setInterval(()=>{if(!$("#pk_log")){clearInterval(t);return}upd()},300);
 }
+function crashDlg(res,packAnyway){
+  const list=(a,c)=>a.map(x=>`<div style="margin-bottom:6px"><span style="color:${c}">${esc(x.file)}</span><br>&nbsp;&nbsp;${x.missing.map(esc).join("<br>&nbsp;&nbsp;")}</div>`).join("");
+  const w=res.warn||[];
+  ask(`<h3>${res.blocked.length} asset(s) will crash the game${packAnyway?" — not packed":""}</h3><div class="sub mono" style="max-height:45vh;overflow:auto">${list(res.blocked,"var(--bad)")}${w.length?`<div style="margin-top:8px;opacity:.8">Also worth a look (may be fine):</div>`+list(w,"var(--warn)"):""}</div>
+    <div class="sub">Delete these files (.uasset + .uexp) from your mod folder, or replace them with the game's own. ${packAnyway?'"Pack anyway" skips this check once.':""}</div>`,
+   [{label:packAnyway?"Cancel":"OK"},...(packAnyway?[{label:"Pack anyway",fn:async()=>{await packAnyway()}}]:[]),{label:"Show first file",cls:"p",fn:async()=>{await api("/api/reveal",{rel:res.blocked[0].file})}}]);
+}
 function packTrack(title,onDone){title=title||"Packing";
   pkLines=[];pkNext=0;pkDone=false;pkBusy=(title==='Packing'||title==='Importing');refreshChanges();if(pkTimer)clearInterval(pkTimer);if(pkEl)pkEl.remove();
   pkEl=document.createElement("div");pkEl.className="task";
@@ -252,8 +259,9 @@ function packTrack(title,onDone){title=title||"Packing";
     pkLines.push(...(r.lines||[]));pkNext=r.next||pkNext;
     const ln=pkEl.querySelector(".ln");if(ln&&pkLines.length)ln.textContent=pkLines[pkLines.length-1];
     if(!r.running&&!pkDone){pkDone=true;pkBusy=false;refreshChanges();clearInterval(pkTimer);
-      pkEl.className="task "+(r.error?"bad":"ok");
-      pkEl.innerHTML=`<b>${r.error?esc(r.title||title)+" failed":({Packing:"Packed",Importing:"Imported",Scanning:"Scanned"})[r.title||title]||esc(r.title||title)+" done"}</b><span class="ln" title="${esc(r.error||r.result.summary)}">${esc(r.error||r.result.summary)}</span><a>View log</a><span class="x" title="dismiss">✕</span>`;
+      const blk=r.result&&r.result.blocked;
+      pkEl.className="task "+(r.error||blk?"bad":"ok");
+      pkEl.innerHTML=`<b>${blk?"Not packed":r.error?esc(r.title||title)+" failed":({Packing:"Packed",Importing:"Imported",Scanning:"Scanned"})[r.title||title]||esc(r.title||title)+" done"}</b><span class="ln" title="${esc(r.error||r.result.summary)}">${esc(r.error||r.result.summary)}</span><a>View log</a><span class="x" title="dismiss">✕</span>`;
       pkEl.querySelector("a").onclick=pkShowLog;pkEl.querySelector(".x").onclick=()=>pkEl.remove();
       if(!r.error)setTimeout(()=>{if(pkEl&&pkDone)pkEl.remove()},20000);if(onDone)onDone(r)}};
   pkTimer=setInterval(tick,300);tick();
@@ -269,8 +277,9 @@ $("#hi_scan").onclick=guard(async()=>{$("#hi_sum").textContent="Scanning…";
   packTrack("Scanning",r=>{$("#hi_sum").textContent="";if(r.error||!r.result)return;hiItems=r.result.items||[];
     $("#hi_sum").textContent=hiItems.length+" items - "+hiItems.filter(x=>x.ok).length+" importable"+(hiItems.some(x=>x.crash.length)?" - "+hiItems.filter(x=>x.crash.length).length+" likely to crash":"")+(hiItems.some(x=>x.warn)?" - "+hiItems.filter(x=>x.warn).length+" penalty/warning":"")+(hiItems.some(x=>x.font)?" - "+hiItems.filter(x=>x.font).length+" font file(s) skipped":"");hiDraw()})});
  $("#hi_mod").onclick=guard(async()=>{await api("/api/hud/modscan",{});
-  packTrack("Checking mod",r=>{if(r.error||!r.result)return;const b=r.result.bad||[];
-    ask(b.length?`<h3>${b.length} asset(s) will crash the game</h3><div class="sub mono">${b.map(x=>esc(x.file)+"<br>&nbsp;&nbsp;needs "+x.missing.map(esc).join(", ")).join("<br>")}</div><div class="sub">Delete these files (.uasset + .uexp) from your mod folder, or replace them with the game's own.</div>`:`<h3>No crash risk found</h3><div class="sub">${r.result.checked} modded asset(s) checked.</div>`,[{label:"OK",cls:"p"}])})});
+  packTrack("Checking mod",r=>{if(r.error||!r.result)return;const b=r.result.bad||[],w=r.result.warn||[];
+    if(b.length){crashDlg({blocked:b,warn:w},null);return}
+    ask(w.length?`<h3>No crash risk found</h3><div class="sub">${r.result.checked} modded asset(s) checked. Worth a look (may be fine):</div><div class="sub mono">${w.map(x=>esc(x.file)+"<br>&nbsp;&nbsp;uses "+x.missing.map(esc).join(", ")).join("<br>")}</div>`:b.length?`<h3>${b.length} asset(s) will crash the game</h3><div class="sub mono">${b.map(x=>esc(x.file)+"<br>&nbsp;&nbsp;needs "+x.missing.map(esc).join(", ")).join("<br>")}</div><div class="sub">Delete these files (.uasset + .uexp) from your mod folder, or replace them with the game's own.</div>`:`<h3>No crash risk found</h3><div class="sub">${r.result.checked} modded asset(s) checked.</div>`,[{label:"OK",cls:"p"}])})});
 $("#hi_all").onclick=()=>$$("#hi_out input[data-i]:not(:disabled)").forEach(i=>i.checked=true);
 $("#hi_nowarn").onclick=()=>$$("#hi_out input[data-i]").forEach(i=>{if(hiItems[i.dataset.i].warn)i.checked=false});
 $("#hi_none").onclick=()=>$$("#hi_out input[data-i]").forEach(i=>i.checked=false);
@@ -502,7 +511,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v73";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v74";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   $("#where").textContent=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";
   if(ST.open){await loadPilots();const n=await refreshChanges();if(n&&!recoveryAsked){recoveryAsked=true;recoverDlg(n)}}else tab("setup");

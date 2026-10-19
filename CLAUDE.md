@@ -10,7 +10,7 @@ Start it with `start.bat` (or `python motogp_master_editor.py web`) → http://1
 - Several of my past diagnoses were wrong (see `docs/HUD_PENALTIES.md`). State guesses as guesses; prefer adding diagnostics (what was skipped/why) over speculating.
 - After each change: bump the version, rebuild the zip, send it. Version lives in TWO places and must match:
   `VERSION = "vNN"` in `webui.py` and `HV="vNN"` in `webui.html` (page shows a red "close the tool and start it again" if they differ).
-  Current: **v73**.
+  Current: **v74**.
 - Deliverable convention: `cd <repo> && zip -q ../motogp_master_editor.zip *.py webui.html README.txt start.bat`, then send the zip.
 
 ## Layout (flat; imports are top-level)
