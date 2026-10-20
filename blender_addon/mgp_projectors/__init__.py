@@ -7,7 +7,7 @@ rotate and scale. "Write back" saves the boxes' transforms into the file (same s
 bl_info = {
     "name": "MGP24 Projectors",
     "author": "MGP24 Master Editor",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "blender": (3, 6, 0),
     "location": "3D View > Sidebar (N) > MGP24",
     "description": "Show/edit MotoGP 24 number projectors (ProjectorCustom*.uasset)",
@@ -26,6 +26,18 @@ from bpy_extras.io_utils import ImportHelper
 from mathutils import Quaternion
 
 import projfile
+
+
+def _plane_mesh(size):
+    """Square in the local YZ plane (normal = local +X, the arrow), `size` wide. Shared per size."""
+    name = "MGP_ProjPlane_%.4f" % size
+    me = bpy.data.meshes.get(name)
+    if not me:
+        h = size / 2
+        me = bpy.data.meshes.new(name)
+        me.from_pydata([(0, -h, -h), (0, h, -h), (0, h, h), (0, -h, h)], [], [(0, 1, 2, 3)])
+        me.update()
+    return me
 
 
 def _settings(context):
@@ -66,7 +78,10 @@ class MGPProjSettings(bpy.types.PropertyGroup):
                         description="Blender units per UE centimetre (0.01 = model imported in metres)")
     flip_y: BoolProperty(name="Mirror Y", default=True,
                          description="UE is left-handed; most UE importers mirror Y. Turn off if boxes land on the wrong side")
-    box_cm: FloatProperty(name="Box size (cm at scale 1)", default=100.0, min=0.1,
+    shape: bpy.props.EnumProperty(name="Show as", default="PLANE", items=[
+        ("PLANE", "Plane", "A flat square facing along the arrow (where the number lands)"),
+        ("BOX", "Box", "The projector volume (decal-style box)")])
+    box_cm: FloatProperty(name="Size (cm at scale 1)", default=100.0, min=0.1,
                           description="Display only - how big a projector of scale 1 is drawn. Not written to the file")
     parent: PointerProperty(name="Parent", type=bpy.types.Object,
                             description="Object whose origin is the bike's origin (e.g. the VEHICLE_BASE armature). Empty = world origin")
@@ -97,9 +112,13 @@ class MGP_OT_load(bpy.types.Operator, ImportHelper):
             context.scene.collection.children.link(coll)
         for p in projs:
             loc, quat, sc = projfile.ue_to_blender(p["loc"], p["quat"], p["scale"], s.unit, s.flip_y)
-            box = bpy.data.objects.new("%s" % p["tag"], None)
-            box.empty_display_type = "CUBE"
-            box.empty_display_size = s.box_cm * s.unit / 2
+            if s.shape == "PLANE":
+                box = bpy.data.objects.new(p["tag"], _plane_mesh(s.box_cm * s.unit))
+                box.show_wire = True
+            else:
+                box = bpy.data.objects.new(p["tag"], None)
+                box.empty_display_type = "CUBE"
+                box.empty_display_size = s.box_cm * s.unit / 2
             box["mgp_tag"] = p["tag"]
             box["mgp_texture"] = p["texture"]
             coll.objects.link(box)
@@ -176,7 +195,10 @@ class MGP_PT_panel(bpy.types.Panel):
         col.prop(s, "parent")
         col.prop(s, "unit")
         col.prop(s, "flip_y")
+        col.prop(s, "shape")
         col.prop(s, "box_cm")
+        if not s.parent:
+            lay.label(text="Tip: set Parent to the bike root (VEHICLE_BASE)", icon="INFO")
         lay.operator("mgp.proj_load", icon="IMPORT")
         coll = _active_coll(context)
         box = lay.box()

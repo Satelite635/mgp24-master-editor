@@ -8,7 +8,7 @@ Guesses (unverified): texture 47 is a placeholder replaced by the rider's number
 
 ## Blender add-on (`blender_addon/mgp_projectors`, shipped as `mgp24_projectors_addon.zip` inside the tool zip)
 - `projfile.py` (no bpy): `load`, `save` (in-place float patch via `uprops.Asset.set_value`, first save keeps `.bak`), `ue_to_blender`/`blender_to_ue` (cm→unit, Y mirrored; quat (x,y,z,w) ↔ (w,-x,y,-z)).
-- `__init__.py`: N-panel "MGP24": Parent (bike origin object), Unit scale (0.01), Mirror Y, Box size (display only, guess 100 cm at scale 1). Load → one CUBE empty per projector + child arrow along local +X (projection axis = guess). Write back / Write to another file (matched by tag). Uses `matrix_basis.decompose()` so any rotation mode works.
+- `__init__.py`: N-panel "MGP24": Parent (bike origin object), Unit scale (0.01), Mirror Y, Box size (display only, guess 100 cm at scale 1). Load → one object per projector ("Show as": Plane = shared mesh square in local YZ facing local +X, default since v76; Box = CUBE empty) + child arrow along local +X (projection axis = guess). Write back / Write to another file (matched by tag). Uses `matrix_basis.decompose()` so any rotation mode works.
 - Tested with `pip install bpy==4.5.*` (py3.11) headless: load → move/scale → write → re-read OK; no-op save byte-identical.
 - **Unverified**: axis/units convention vs Faizal's imported model, origin of the bike, box size, projection axis. Calibrate once against a bike whose number placement is known in game.
 - Build: `./build_zip.sh` (vendors uprops.py + mgp_core.py into the add-on zip).
