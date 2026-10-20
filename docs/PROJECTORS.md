@@ -11,6 +11,7 @@ Guesses (unverified): texture 47 is a placeholder replaced by the rider's number
 - Current reading: decal-style projector. It sits inside the bike (x81 z96.5 cm) and projects along local -X, which for this quat is forward and 37° UP (UE +X of quat (0.317,0,-0.948,0) = (-0.8,0,-0.6)). Faizal: the number is on the front nose just under the windscreen. Ray direction may be +X instead -> add-on toggle.
 - v77 in Blender: square ended inside the bike - ray hit internal meshes first (reproduced headless). v78 adds Target mesh + hit readout.
 - Number size at scale 1 still a guess (100 cm).
+- **In-game test (Oct 20): SidePlateRight x+20, z+20, scale x2 in ProjectorCustom104_006 -> number did NOT change at all.** So this file/projector is not what places that front number (or the file is not loaded for that rider). v79 adds Browse "Used by" to find what references ProjectorCustom104_006 and which projector file the bike really uses. All add-on placement readings so far are unconfirmed.
 
 ## Blender add-on (`blender_addon/mgp_projectors`, shipped as `mgp24_projectors_addon.zip` inside the tool zip)
 - `projfile.py` (no bpy): `load`, `save` (in-place float patch via `uprops.Asset.set_value`, first save keeps `.bak`), `ue_to_blender`/`blender_to_ue` (cm→unit, Y mirrored; quat (x,y,z,w) ↔ (w,-x,y,-z)).

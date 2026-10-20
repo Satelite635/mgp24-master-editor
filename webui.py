@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v78"
+VERSION = "v79"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -346,6 +346,39 @@ def make_api(S):
                         out.add(os.path.relpath(os.path.join(d, f), root).replace(os.sep, "/"))
             return sorted(out)
         return _files(P, refresh)
+
+    def refs(q, b):
+        """Background job: which assets (mod folder + paks) mention a package name in their name table."""
+        P = S.need()
+        pkg = (b.get("pkg") or "").strip()
+        name = pkg.rsplit("/", 1)[-1]
+        if not name:
+            raise C.MgpError("no asset given")
+        folder = (b.get("folder") or "Content/assets").strip("/")
+        needle = (pkg if pkg.startswith("/Game/") else name).lower().encode("latin1")
+
+        def work(log):
+            rels = P.src.find(folder, ".uasset")
+            log("Looking for %s in %d asset(s) under %s ..." % (needle.decode(), len(rels), folder))
+            hits, bad = [], 0
+            for i, r in enumerate(rels):
+                if i and i % 3000 == 0:
+                    log("... %d/%d checked, %d found" % (i, len(rels), len(hits)))
+                if r.rsplit("/", 1)[-1][:-7].lower() == name.lower():
+                    continue                                      # the asset itself
+                try:
+                    data = P.src.read(r)
+                except Exception:
+                    bad += 1
+                    continue
+                if needle in data.lower():
+                    hits.append(dict(file=r, origin=P.src.origin(r)))
+                    log("USED BY: %s (%s)" % (r, hits[-1]["origin"]))
+            log("Done: %d asset(s) use %s%s" % (len(hits), name, (" (%d unreadable)" % bad) if bad else ""))
+            return dict(hits=hits, name=name, checked=len(rels), unreadable=bad,
+                        summary="%d asset(s) use %s" % (len(hits), name))
+        _job_start("Finding uses", work)
+        return dict(started=True)
 
     def browse_list(q, b):
         P = S.need()
@@ -1589,7 +1622,7 @@ def make_api(S):
         return dict(value=val)
 
     return {
-        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
+        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
         ("POST", "/api/settings"): settings, ("GET", "/api/changes"): changes, ("POST", "/api/save"): save,
         ("POST", "/api/discard"): discard, ("POST", "/api/quit"): quit_, ("POST", "/api/open"): open_, ("GET", "/api/pilots"): pilots,
         ("GET", "/api/bindings"): bindings, ("GET", "/api/choices"): choices, ("POST", "/api/replace"): replace,

@@ -414,7 +414,7 @@ const brLoad=guard(async(dir,refresh)=>{
   if(brDir.includes("/"))h+=`<tr><td colspan="3"><a href="#" data-d="${esc(brDir.slice(0,brDir.lastIndexOf("/")))}">..</a></td></tr>`;
   h+=r.dirs.map(d=>`<tr><td colspan="2">📁 <a href="#" data-d="${esc(brDir+"/"+d.name)}">${esc(d.name)}</a></td><td style="opacity:.6">${d.count} files</td></tr>`).join("");
   h+=r.items.map((it,i)=>`<tr><td style="word-break:break-all">${esc(it.name)}</td><td style="opacity:.6;white-space:nowrap">${esc(it.exts.filter(Boolean).join(" "))} ${esc(it.origin)}</td><td style="white-space:nowrap">`+
-    (it.asset?`<button class="b" data-a="edit" data-i="${i}">Edit</button> <button class="b" data-a="clone" data-i="${i}">Clone</button> `:"")+
+    (it.asset?`<button class="b" data-a="edit" data-i="${i}">Edit</button> <button class="b" data-a="clone" data-i="${i}">Clone</button> <button class="b" data-a="refs" data-i="${i}" title="which assets point to this one (takes a while)">Used by</button> `:"")+
     (it.base.toLowerCase().endsWith(".locres")?`<button class="b" data-a="loc" data-i="${i}">Open in Localization</button> `:"")+
     `<button class="b" data-a="extract" data-i="${i}">Extract</button></td></tr>`).join("");
   $("#br_out").innerHTML=h+"</table>";
@@ -430,6 +430,9 @@ async function brAct(a,it){
       toast(r.files.length?`Extracted ${r.files.length} file(s) to your mod folder`:"Nothing new to extract","ok");brLoad()};
     await go(undefined);return}
   if(a==="edit"){const r=await api("/api/edit",{pkg:it.pkg});toast(r.launched?"Opened in UAssetGUI":("Staged "+r.path+(r.error?" ("+r.error+")":"")),r.launched?"ok":"bad");return}
+  if(a==="refs"){await api("/api/refs",{pkg:it.pkg});
+    packTrack("Finding uses",r=>{if(r.error||!r.result)return;const h=r.result.hits;
+      ask(`<h3>${h.length} asset(s) use ${esc(r.result.name)}</h3><div class="sub">${r.result.checked} assets checked${r.result.unreadable?`, ${r.result.unreadable} unreadable`:""}.</div><div class="sub mono" style="max-height:50vh;overflow:auto">${h.map(x=>esc(x.file)+` <span style="opacity:.6">${esc(x.origin)}</span>`).join("<br>")||"Nothing points to it - the game probably never loads it."}</div>`,[{label:"OK",cls:"p"}])});return}
   if(a==="loc"){tab("loc");await loFiles();$("#lo_file").value=it.base;loSearch(0);return}
   if(a==="clone"){
     const cur=it.name.split("/").pop();
@@ -511,7 +514,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v78";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v79";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   $("#where").textContent=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";
   if(ST.open){await loadPilots();const n=await refreshChanges();if(n&&!recoveryAsked){recoveryAsked=true;recoverDlg(n)}}else tab("setup");
