@@ -155,6 +155,8 @@ class Asset:
                 elif s == "Color":
                     b, g, r, a = u[p:p + 4]
                     tag["value"] = [r, g, b, a]; tag["edit"] = "color8"
+                elif s in ("IntPoint", "IntVector"):
+                    tag["value"] = list(struct.unpack_from("<%di" % (size // 4), u, p))
                 elif s == "Guid":
                     tag["value"] = bytes(u[p:p + 16]).hex()
                 else:
