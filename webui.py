@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v83"
+VERSION = "v84"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -395,14 +395,31 @@ def make_api(S):
                 if n.startswith("/Game/") and "projector" in n.rsplit("/", 1)[-1].lower() \
                         and n not in [f["pkg"] for f in found] and P.src.exists(C.game_to_rel(n) + ".uasset"):
                     found.append(dict(pkg=n, how="used by " + cur.rsplit("/", 1)[-1]))
+        skipped = []
+
+        def real(fs):                                           # keep only real projector data (TaggedProjectors)
+            out = []
+            for f in fs:
+                rel = C.game_to_rel(f["pkg"])
+                try:
+                    PJ.parse(P.src.read(rel + ".uasset"), P.src.read(rel + ".uexp"))
+                    out.append(f)
+                except Exception as e:
+                    skipped.append("%s (%s)" % (f["pkg"].rsplit("/", 1)[-1], str(e)[:60]))
+            return out
+        found = real(found)
         if not found and "/customization_data/" in pkg and "_" in pkg.rsplit("/", 1)[-1]:
             folder, tag = pkg.rsplit("/", 1)[0], pkg.rsplit("_", 1)[1]
+            guess = []
             for r in P.src.find(C.game_to_rel(folder), ".uasset"):
                 b = r.rsplit("/", 1)[-1][:-7]
                 if "projector" in b.lower() and b.endswith("_" + tag):
-                    found.append(dict(pkg=folder + "/" + b, how="guessed: same folder and variant %s as %s" % (tag, pkg.rsplit("/", 1)[-1])))
+                    guess.append(dict(pkg=folder + "/" + b, how="guessed: same folder and variant %s as %s" % (tag, pkg.rsplit("/", 1)[-1])))
+            found = real(guess)
         if not pkgs:
             return [], "this entry has no bindings"
+        if not found and skipped:
+            return [], "found only non-projector files: " + "; ".join(skipped)
         return found, "" if found else "no projector file found; checked %d asset(s): %s" % (len(checked), ", ".join(checked[:12]) + (" ..." if len(checked) > 12 else ""))
 
     def proj_rider(q, b):
