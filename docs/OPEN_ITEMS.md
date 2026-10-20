@@ -9,9 +9,21 @@
 ## Tool improvements worth doing
 - ~~Reopen/refresh `PakSet` after Pack mod~~ done in v72 (auto refresh); unconfirmed in game.
 - Make HUD import smarter: skip fonts and penalty/warning files by default; offer to run the graft right after import.
-- Crash scan: detect SBK-format Font assets (serial size mismatch) — currently only missing `/Script` classes are detected.
+- ~~Crash scan: detect SBK-format Font assets~~ v74 (compares Font native-part size with the game's Fonts) — **unverified on real files**; ask Faizal to run "Check mod" on a mod that contains an SBK Font.
 - Optionally move heavy actions (Port audio, extract) onto the background job log.
 - Slot-position copy tool for the 8 widgets the two pages share (leaderboard, race pace, raise-bike + a few dev ones).
+
+## Projectors (paused)
+- In-game: editing ProjectorCustom104_006 SidePlateRight changed nothing. Copy tool (v80) shipped; unverified in game. See `docs/PROJECTORS.md`.
+
+## Riding style (v73) — waiting on Faizal
+- Check in game that an edited/copied riding style changes the rider's animation, and that a row added for a rider without one doesn't crash. SubRidingStyle = how much body lean etc. within the RidingStyle's limits (Faizal: minor, he copies it from another rider). Unknown meanings ( RidingStyle 6 has no preset row, LegOutType, StartLeg -1/0/1) are not known — only numbers shown.
+
+## Feature ideas agreed to keep (Oct 19)
+- (Rider/team data editor dropped: the Database + Localization tabs already cover it.)
+- Customer pack export (one-click pak + readme), before/after preview sheet, `~mods` conflict checker.
+- ~~Pre-pack crash check~~ (v74), snapshots/undo, pak diff, HUD widget-tree viewer.
+- Cross-game: compatibility report for another Milestone game's pak/map (what's missing in GP24), generalized `/Script/motogpXX` → `/Script/motogp24` import retyping, bike sound port per bike, gear port from other games. Track import: visual-only swaps realistic; full tracks need AI lines/timing/DataTables + game-specific Blueprints.
 
 ## Feature requests not started
 - **Track variant import from GP22** (same layout, different variant): needs the track name and GP22 files from Faizal; proposed a diff-based audit tool (compare GP22 vs GP24 assets to show what differs).

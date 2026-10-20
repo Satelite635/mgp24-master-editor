@@ -10,8 +10,8 @@ Start it with `start.bat` (or `python motogp_master_editor.py web`) → http://1
 - Several of my past diagnoses were wrong (see `docs/HUD_PENALTIES.md`). State guesses as guesses; prefer adding diagnostics (what was skipped/why) over speculating.
 - After each change: bump the version, rebuild the zip, send it. Version lives in TWO places and must match:
   `VERSION = "vNN"` in `webui.py` and `HV="vNN"` in `webui.html` (page shows a red "close the tool and start it again" if they differ).
-  Current: **v72**.
-- Deliverable convention: `cd <repo> && zip -q ../motogp_master_editor.zip *.py webui.html README.txt start.bat`, then send the zip.
+  Current: **v85**.
+- Deliverable convention: `./build_zip.sh` (builds `../motogp_master_editor.zip` incl. the Blender add-on zip), then send the zip.
 
 ## Layout (flat; imports are top-level)
 | File | Role |
@@ -19,12 +19,14 @@ Start it with `start.bat` (or `python motogp_master_editor.py web`) → http://1
 | `motogp_master_editor.py` | CLI entry (`web`, `gui`, `selftest`, `bindings`, `replace`, …) |
 | `webui.py` | HTTP server + all `/api/*` endpoints (≈1.5k lines), job runner, global lock |
 | `webui.html` | Entire front end (vanilla JS, one file) |
-| `mgp_core.py` | `UAsset` header editing, `BindingTable`, `Source` (layered read), `Project`, `Db`, clone logic |
+| `mgp_core.py` | `UAsset` header editing, `BindingTable`, `StyleTable` (RidingStyle_DT), `Source` (layered read), `Project`, `Db`, clone logic |
 | `uprops.py` | Read-only `.uexp` property parser (`Asset`) |
 | `hudskin.py` | HUD tools: skin compare/apply, visibility, **retype_widget**, **swap_widget_types**, font retarget |
 | `audioport.py` | Wwise bank port from other games (with `apply_gain`) |
 | `mgp_pak.py` / `mgp_pakwrite.py` | Pak reader (`PakSet`) / writer (v8 uncompressed) |
 | `mgp_locres.py` | `.locres` read/write |
+| `projfile.py` | Projector files (`ProjectorsDataSource`): parse/patch transforms; shared by the editor and the Blender add-on |
+| `blender_addon/mgp_projectors/` | Blender add-on for number projectors (see `docs/PROJECTORS.md`) |
 | `test_*.py` | Offline tests (most need CLI args — see `docs/TESTING.md`) |
 | `tests/jsd/*.js` | jsdom front-end harnesses (paths hardcoded; see docs) |
 
@@ -39,4 +41,4 @@ Start it with `start.bat` (or `python motogp_master_editor.py web`) → http://1
 
 ## Read next
 `docs/PROJECT_CONTEXT.md` (what's been built and why) → `docs/HUD_PENALTIES.md` (the active problem) → `docs/OPEN_ITEMS.md` (what to do next).
-Other docs: `ARCHITECTURE.md`, `UE4_FORMAT_NOTES.md`, `FONTS.md`, `CHANGELOG.md`, `TESTING.md`.
+Other docs: `PROJECTORS.md`, `ARCHITECTURE.md`, `UE4_FORMAT_NOTES.md`, `FONTS.md`, `CHANGELOG.md`, `TESTING.md`.

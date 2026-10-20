@@ -131,3 +131,9 @@ Import safety check
 
 Replacement sheet - names from localization
   The dropdown now defaults to 'All Italian (it/) localization files' (the language the game uses; falls back to every file if there is no it/ folder) (it used to pick whichever file came first, e.g. a German dialogs file). The base-game name comes from the game's original .locres; if your mod's .locres has a different text for the same entry, that text shows as the placeholder in 'Replaced with' and 'Fill from mod' copies all of them into the sheet. The summary shows how many names were found.
+
+Blender add-on: bike number projectors (mgp24_projectors_addon.zip, inside this zip)
+  Install: Blender > Edit > Preferences > Add-ons > (arrow menu) Install from Disk > pick mgp24_projectors_addon.zip, tick "MGP24 Projectors".
+  Use: 3D View > N panel > MGP24. Set Parent to your bike's root (e.g. VEHICLE_BASE), Load a ProjectorCustomNNN_VVV.uasset (its .uexp must be next to it).
+  Each projector shows as a box (+ arrow). Move/rotate/scale it, select it, click Write back. "Write to another file" copies the placement to another bike's projector file.
+  The first write keeps a .bak copy. Boxes with no texture are probably unused. Axis/scale conventions are a first guess: check once against a bike you know.

@@ -12,10 +12,11 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v72"
+VERSION = "v85"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
+import projfile as PJ
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -261,6 +262,12 @@ def make_api(S):
         if os.path.exists(dest) and not b.get("overwrite"):
             return dict(exists=True, path=dest)
         def work(log):
+            if not b.get("force") and P.paks:
+                log("Crash check before packing...")
+                block, warn, n = _crash_scan(P, log)
+                if block:
+                    return dict(blocked=block, warn=warn, checked=n,
+                                summary="Not packed: %d asset(s) would crash the game" % len(block))
             try:
                 n, size = PW.write_pak(dest, files, log)
             except PermissionError:
@@ -340,6 +347,189 @@ def make_api(S):
                         out.add(os.path.relpath(os.path.join(d, f), root).replace(os.sep, "/"))
             return sorted(out)
         return _files(P, refresh)
+
+    # ---- number projectors (ProjectorCustom/ProjectorOfficial... data assets)
+    def _proj_open(P, pkg):
+        rel = C.game_to_rel(C.normalize_target(pkg)) + ".uasset"
+        ue = rel[:-7] + ".uexp"
+        if not P.src.exists(rel) or not P.src.exists(ue):
+            raise C.MgpError("projector file not found: %s" % pkg)
+        try:
+            a, projs = PJ.parse(P.src.read(rel), P.src.read(ue))
+        except ValueError as e:
+            raise C.MgpError("%s: %s" % (rel.rsplit("/", 1)[-1], e))
+        return rel, a, projs
+
+    def _rotator(q):
+        """UE quat (x,y,z,w) -> (pitch, yaw, roll) in degrees, as Unreal/FModel show it."""
+        return [round(v, 3) + 0.0 for v in PJ.quat_to_rotator(q)]
+
+    def _rider_projectors(P, key, group):
+        """Projector files of a rider/team entry: [dict(pkg, how)]. First the projector packages the bike's
+        variant set references; if none, Projector* files in the bike's customization_data folder with the same variant tag."""
+        rel = bike_rel(P, group or "official")
+        t = P.table(rel) if rel else None
+        obj = t.target(key) if t and key in t.rows and is_game(t.target(key)) else ""
+        pkg = obj.partition(".")[0]
+        pkgs = [pkg] if pkg else []
+        if obj:
+            try:
+                pkgs += [m.pkg for m in C.resolve_set(P.src, obj)["members"]]
+            except C.MgpError:
+                pass
+        for _r, _c, tgt in P.pilot_bindings(key, group):        # every customization_data the entry points at
+            if is_game(tgt):
+                pkgs.append(tgt.partition(".")[0])
+        found, checked = [], []
+        for cur in dict.fromkeys(pkgs):
+            r = C.game_to_rel(cur) + ".uasset"
+            if not P.src.exists(r):
+                continue
+            checked.append(cur.rsplit("/", 1)[-1])
+            try:
+                names = C.UAsset(P.src.read(r)).texts()
+            except Exception:
+                continue
+            for n in names:
+                n = n.partition(".")[0].partition(":")[0]             # soft paths are '/Game/x/Name.Name'
+                if n.startswith("/Game/") and "projector" in n.rsplit("/", 1)[-1].lower() \
+                        and n not in [f["pkg"] for f in found] and P.src.exists(C.game_to_rel(n) + ".uasset"):
+                    found.append(dict(pkg=n, how="used by " + cur.rsplit("/", 1)[-1]))
+        skipped = []
+
+        def real(fs):                                           # keep only real projector data (TaggedProjectors)
+            out = []
+            for f in fs:
+                rel = C.game_to_rel(f["pkg"])
+                try:
+                    PJ.parse(P.src.read(rel + ".uasset"), P.src.read(rel + ".uexp"))
+                    out.append(f)
+                except Exception as e:
+                    skipped.append("%s (%s)" % (f["pkg"].rsplit("/", 1)[-1], str(e)[:60]))
+            return out
+        found = real(found)
+        if not found and "/customization_data/" in pkg and "_" in pkg.rsplit("/", 1)[-1]:
+            folder, tag = pkg.rsplit("/", 1)[0], pkg.rsplit("_", 1)[1]
+            guess = []
+            for r in P.src.find(C.game_to_rel(folder), ".uasset"):
+                b = r.rsplit("/", 1)[-1][:-7]
+                if "projector" in b.lower() and b.endswith("_" + tag):
+                    guess.append(dict(pkg=folder + "/" + b, how="guessed: same folder and variant %s as %s" % (tag, pkg.rsplit("/", 1)[-1])))
+            found = real(guess)
+        if not pkgs:
+            return [], "this entry has no bindings"
+        if not found and skipped:
+            return [], "found only non-projector files: " + "; ".join(skipped)
+        return found, "" if found else "no projector file found; checked %d asset(s): %s" % (len(checked), ", ".join(checked[:12]) + (" ..." if len(checked) > 12 else ""))
+
+    def proj_rider(q, b):
+        P = S.need()
+        key, group = q["key"][0], (q.get("group") or ["official"])[0]
+        found, why = _rider_projectors(P, key, group)
+        out = dict(found=found, why=why)
+        want = (q.get("pkg") or [""])[0] or (found[0]["pkg"] if found else "")
+        if want:
+            rel, _, projs = _proj_open(P, want)
+            out.update(pkg=want, origin=P.src.origin(rel), projectors=_proj_rows(projs))
+        return out
+
+    def proj_set(q, b):
+        """Type values for one projector: loc [x,y,z] cm, rot [pitch,yaw,roll] deg, scale [x,y,z], priority."""
+        P = S.need()
+        rel, a, projs = _proj_open(P, b["pkg"])
+        p = next((x for x in projs if x["tag"] == b["tag"]), None)
+        if not p:
+            raise C.MgpError("no projector %s in this file" % b["tag"])
+        try:
+            loc = [float(v) for v in b["loc"]]
+            rot = [float(v) for v in b["rot"]]
+            sc = [float(v) for v in b["scale"]]
+            pri = int(b["priority"]) if b.get("priority") not in (None, "") else None
+        except (TypeError, ValueError, KeyError):
+            raise C.MgpError("every field needs a number")
+        if len(loc) != 3 or len(rot) != 3 or len(sc) != 3:
+            raise C.MgpError("position, rotation and scale need 3 numbers each")
+        old = _rotator(p["quat"])
+        quat = p["quat"] if all(abs(x - y) < 5e-4 for x, y in zip(rot, old)) else PJ.rotator_to_quat(*rot)  # untouched: keep exact
+        PJ.patch(a, projs, {p["tag"]: dict(loc=loc, quat=quat, scale=sc, priority=pri)})
+        _proj_write(P, rel, a)
+        return dict(projectors=_proj_rows(PJ.parse(a.ua.to_bytes(), bytes(a.uexp))[1]))
+
+    def _proj_write(P, rel, a):
+        PJ.parse(a.ua.to_bytes(), bytes(a.uexp))              # still parses after the patch
+        for path, data in ((rel, a.ua.to_bytes()), (rel[:-7] + ".uexp", bytes(a.uexp))):
+            full = P.src.loose(path)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            P.backup(full)
+            with open(full, "wb") as f:
+                f.write(data)
+
+    def _proj_rows(projs):
+        return [dict(tag=p["tag"], loc=[round(v, 3) for v in p["loc"]], rot=_rotator(p["quat"]), scale=[round(v, 4) for v in p["scale"]],
+                     priority=p["priority"], texture=(p["texture"] or "").rsplit("/", 1)[-1].split(".")[0]) for p in projs]
+
+    def proj_list(q, b):
+        """Projectors in one file, plus every projector file the mod folder/paks have (to copy from)."""
+        P = S.need()
+        pkg = (q.get("pkg") or [""])[0]
+        out = dict(files=sorted("/Game/" + r[len("Content/"):-7] for r in P.src.find("Content/assets/graphics/vehicles", ".uasset")
+                                if "projector" in r.rsplit("/", 1)[-1].lower()))
+        if pkg:
+            rel, _, projs = _proj_open(P, pkg)
+            out.update(pkg=C.normalize_target(pkg), origin=P.src.origin(rel), projectors=_proj_rows(projs))
+        return out
+
+    def proj_copy(q, b):
+        """Copy position/rotation/scale/priority of the chosen tags from `src` into `dst` (same file size; staged)."""
+        P = S.need()
+        rel, a, dprojs = _proj_open(P, b["dst"])
+        src = b["src"]
+        if not src.startswith("/Game/"):                  # a rider/team key: use its projector file
+            found, why = _rider_projectors(P, src, b.get("group") or "official")
+            if not found:
+                raise C.MgpError("%s: %s" % (src, why))
+            src = found[0]["pkg"]
+        _, _, sprojs = _proj_open(P, src)
+        want = set(b.get("tags") or [p["tag"] for p in sprojs])
+        vals = {p["tag"]: p for p in sprojs if p["tag"] in want}
+        done = PJ.patch(a, dprojs, vals)
+        if done:
+            _proj_write(P, rel, a)
+        missing = sorted(want - set(done))
+        return dict(done=done, missing=missing, src=src, projectors=_proj_rows(PJ.parse(a.ua.to_bytes(), bytes(a.uexp))[1]))
+
+    def refs(q, b):
+        """Background job: which assets (mod folder + paks) mention a package name in their name table."""
+        P = S.need()
+        pkg = (b.get("pkg") or "").strip()
+        name = pkg.rsplit("/", 1)[-1]
+        if not name:
+            raise C.MgpError("no asset given")
+        folder = (b.get("folder") or "Content/assets").strip("/")
+        needle = (pkg if pkg.startswith("/Game/") else name).lower().encode("latin1")
+
+        def work(log):
+            rels = P.src.find(folder, ".uasset")
+            log("Looking for %s in %d asset(s) under %s ..." % (needle.decode(), len(rels), folder))
+            hits, bad = [], 0
+            for i, r in enumerate(rels):
+                if i and i % 3000 == 0:
+                    log("... %d/%d checked, %d found" % (i, len(rels), len(hits)))
+                if r.rsplit("/", 1)[-1][:-7].lower() == name.lower():
+                    continue                                      # the asset itself
+                try:
+                    data = P.src.read(r)
+                except Exception:
+                    bad += 1
+                    continue
+                if needle in data.lower():
+                    hits.append(dict(file=r, origin=P.src.origin(r)))
+                    log("USED BY: %s (%s)" % (r, hits[-1]["origin"]))
+            log("Done: %d asset(s) use %s%s" % (len(hits), name, (" (%d unreadable)" % bad) if bad else ""))
+            return dict(hits=hits, name=name, checked=len(rels), unreadable=bad,
+                        summary="%d asset(s) use %s" % (len(hits), name))
+        _job_start("Finding uses", work)
+        return dict(started=True)
 
     def browse_list(q, b):
         P = S.need()
@@ -469,6 +659,8 @@ def make_api(S):
     def reveal(q, b):
         """Open a folder in the file manager; for a file, open its folder with the file selected."""
         path = (b.get("path") or "").strip().strip('"')
+        if not path and b.get("rel"):                            # a file in the mod folder
+            path = os.path.join(S.need().real_root, *b["rel"].split("/"))
         if not path and b.get("what") == "pak":                 # the Pack mod default output folder
             path = os.path.join(S.need().real_root, "_mgp_pak")
             os.makedirs(path, exist_ok=True)
@@ -812,27 +1004,91 @@ def make_api(S):
         _job_start("Scanning", work)
         return dict(started=True)
 
+    def _font_tail(a):
+        """Bytes after the tagged properties of a Font export (its native part), or None if not a Font."""
+        for i, e in enumerate(a.exports):
+            if e["cls"] == "Font":
+                x = a.parse_export(i)
+                return x["size_end"] - x["end"]
+        return None
+
+    def _game_font_tail(P):
+        """Native-part size of the game's own Font assets (base paks only); None if none could be read."""
+        key = tuple(id(r) for r in P.paks.base_readers()) if P.paks else None
+        cache = getattr(S, "fontcache", None)
+        if cache and cache[0] == key:
+            return cache[1]
+        tails = {}
+        if P.paks:
+            prefix = P.paks.project + "/content/assets/ui/fonts/"
+            for r in (P.paks.base_readers() or P.paks.readers):
+                for low in r.files:
+                    if low.startswith(prefix) and low.endswith(".uasset") and len(tails) < 400:
+                        try:
+                            t = _font_tail(U.Asset(r.read(low), r.read(low[:-7] + ".uexp")))
+                        except Exception:
+                            continue
+                        if t is not None:
+                            tails[t] = tails.get(t, 0) + 1
+        best = max(tails, key=tails.get) if tails else None
+        S.fontcache = (key, best)
+        return best
+
+    FOREIGN_RE = __import__("re").compile(r"^(sbk|motogp(?!24$)|ride\d|mxgp)", __import__("re").I)
+
+    def _crash_scan(P, log):
+        """Loose mod assets that will (block) or may (warn) crash the game.
+        block: imports from another game's C++ module (e.g. /Script/sbk1); a UI asset needing a motogp24 class no
+               game UI asset uses; a Font whose native part differs from the game's Fonts (SBK Font: 'Serial size mismatch').
+        warn:  a non-UI asset needing a motogp24 class no game *UI* asset uses (the class list comes from UI assets
+               only, so this can be a false alarm)."""
+        known = _game_classes(P, log)
+        font_tail = _game_font_tail(P)
+        rels = P.src.find("Content", ".uasset", loose_only=True)     # modded = loose files
+        log("Checking %d modded asset(s)%s..." % (len(rels), "" if known else " (game classes unknown - class check skipped)"))
+        block, warn = [], []
+        for r in rels:
+            try:
+                ux = r[:-7] + ".uexp"
+                a = U.Asset(P.src.read(r), P.src.read(ux) if P.src.exists(ux) else b"")
+                refs = _script_refs(a)
+            except Exception:
+                continue
+            hard, soft = [], []
+            ui = "/content/assets/ui/" in r.lower()
+            for m in sorted(x for x in refs if ":" in x):
+                mod = m.split(":", 1)[0]
+                if FOREIGN_RE.match(mod):
+                    hard.append(m)
+                elif known and ("@" + mod.lower()) not in known:
+                    (hard if ui else soft).append(m)
+            if known:
+                (hard if ui else soft).extend(m for m in _missing(refs, known) if ":" not in m)
+            if font_tail is not None and a.uexp:
+                try:
+                    t = _font_tail(a)
+                except Exception:
+                    t = None
+                if t is not None and t != font_tail:
+                    hard.append("Font made by another game (native part %d bytes, the game's Fonts have %d)" % (t, font_tail))
+            if hard:
+                block.append(dict(file=r, missing=hard, origin=P.src.origin(r)))
+                log("CRASH RISK: %s needs %s" % (r, ", ".join(hard)))
+            elif soft:
+                warn.append(dict(file=r, missing=soft, origin=P.src.origin(r)))
+                log("maybe: %s uses %s (not seen in the game's UI assets)" % (r, ", ".join(soft)))
+        log("Done: %d of %d asset(s) will crash the game, %d to double-check" % (len(block), len(rels), len(warn)))
+        return block, warn, len(rels)
+
     def hud_modscan(q, b):
         """Assets in the mod folder/staging that need a C++ class this game lacks (what causes 'Could not find SuperStruct')."""
         P = S.need()
 
         def work(log):
-            known = _game_classes(P, log)
-            if not known:
+            if not P.paks:
                 raise C.MgpError("game paks not available to learn the game's classes")
-            rels = P.src.find("Content", ".uasset", loose_only=True)     # modded = loose files; no need to stat every pak asset
-            log("Checking %d modded asset(s)..." % len(rels))
-            bad = []
-            for r in rels:
-                try:
-                    miss = _missing(_script_refs(U.Asset(P.src.read(r), b"")), known)
-                except Exception:
-                    continue
-                if miss:
-                    bad.append(dict(file=r, missing=miss, origin=P.src.origin(r)))
-                    log("CRASH RISK: %s needs %s" % (r, ", ".join(miss)))
-            log("Done: %d of %d asset(s) need a class the game lacks" % (len(bad), len(rels)))
-            return dict(bad=bad, checked=len(rels))
+            block, warn, n = _crash_scan(P, log)
+            return dict(bad=block, warn=warn, checked=n)
         _job_start("Checking mod", work)
         return dict(started=True)
 
@@ -1396,7 +1652,52 @@ def make_api(S):
         P = S.need()
         cats = set(b["only"]) if b.get("only") else None
         ch = P.copy_look(b["key"], b["donor"], cats)
-        return [dict(table=tname(rel), old=o, new=n) for rel, o, n in ch]
+        out = [dict(table=tname(rel), old=o, new=n) for rel, o, n in ch]
+        if cats and "style" in cats:                 # riding style lives in its own table (RidingStyle_DT)
+            st = P.style()
+            if b["donor"] in st.rows:
+                if b["key"] not in st.rows:
+                    st.add_row(b["key"], b["donor"]); changed = True
+                else:
+                    changed = bool(st.set_values(b["key"], st.values(b["donor"])))
+                if changed:
+                    P.save_style()
+                    out.append(dict(table="RidingStyle_DT", old="", new=b["donor"]))
+        return out
+
+    # ---- riding style (RidingStyle_DT)
+    def style_get(q, b):
+        P = S.need()
+        key = q["key"][0]
+        try:
+            st = P.style()
+        except C.MgpError as e:
+            return dict(error=str(e))
+        styles = {st.values(p)["RidingStyle"]: p for p in st.presets() if "RidingStyle" in st.rows[p]}
+        sources = st.presets() + sorted(r for r in st.rows if "_" in r and r != key)
+        if key not in st.rows:
+            return dict(exists=False, sources=sources, styles=styles)
+        return dict(exists=True, values=st.values(key), types=st.types(key), sources=sources, styles=styles,
+                    origin=P.src.origin(C.STYLE_REL + ".uasset") if hasattr(P.src, "origin") else "")
+
+    def style_set(q, b):
+        """{key, values:{field:number}} edits the row; {key, donor} copies a preset's/rider's row (adds the row if missing)."""
+        P = S.need()
+        st, key = P.style(), b["key"]
+        if b.get("donor"):
+            if b["donor"] not in st.rows:
+                raise C.MgpError("no riding-style row named " + b["donor"])
+            if key not in st.rows:
+                st.add_row(key, b["donor"])
+                P.save_style()
+                return dict(added=True, changed={})
+            vals = st.values(b["donor"])
+        else:
+            vals = b.get("values") or {}
+        ch = st.set_values(key, vals)
+        if ch:
+            P.save_style()
+        return dict(added=False, changed={k: list(v) for k, v in ch.items()})
 
     def clone(q, b):
         P = S.need()
@@ -1472,11 +1773,11 @@ def make_api(S):
         return dict(value=val)
 
     return {
-        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
+        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("GET", "/api/proj/rider"): proj_rider, ("POST", "/api/proj/set"): proj_set, ("POST", "/api/proj/copy"): proj_copy, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
         ("POST", "/api/settings"): settings, ("GET", "/api/changes"): changes, ("POST", "/api/save"): save,
         ("POST", "/api/discard"): discard, ("POST", "/api/quit"): quit_, ("POST", "/api/open"): open_, ("GET", "/api/pilots"): pilots,
         ("GET", "/api/bindings"): bindings, ("GET", "/api/choices"): choices, ("POST", "/api/replace"): replace,
-        ("POST", "/api/copylook"): copy_look, ("POST", "/api/clone"): clone, ("GET", "/api/describe"): describe_,
+        ("POST", "/api/copylook"): copy_look, ("GET", "/api/style"): style_get, ("POST", "/api/style"): style_set, ("POST", "/api/clone"): clone, ("GET", "/api/describe"): describe_,
         ("GET", "/api/db/tables"): db_tables, ("GET", "/api/db/rows"): db_rows, ("POST", "/api/db/update"): db_update,
     }
 
