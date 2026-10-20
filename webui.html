@@ -414,13 +414,29 @@ const brLoad=guard(async(dir,refresh)=>{
   if(brDir.includes("/"))h+=`<tr><td colspan="3"><a href="#" data-d="${esc(brDir.slice(0,brDir.lastIndexOf("/")))}">..</a></td></tr>`;
   h+=r.dirs.map(d=>`<tr><td colspan="2">📁 <a href="#" data-d="${esc(brDir+"/"+d.name)}">${esc(d.name)}</a></td><td style="opacity:.6">${d.count} files</td></tr>`).join("");
   h+=r.items.map((it,i)=>`<tr><td style="word-break:break-all">${esc(it.name)}</td><td style="opacity:.6;white-space:nowrap">${esc(it.exts.filter(Boolean).join(" "))} ${esc(it.origin)}</td><td style="white-space:nowrap">`+
-    (it.asset?`<button class="b" data-a="edit" data-i="${i}">Edit</button> <button class="b" data-a="clone" data-i="${i}">Clone</button> <button class="b" data-a="refs" data-i="${i}" title="which assets point to this one (takes a while)">Used by</button> `:"")+
+    (it.asset?`<button class="b" data-a="edit" data-i="${i}">Edit</button> <button class="b" data-a="clone" data-i="${i}">Clone</button> <button class="b" data-a="refs" data-i="${i}" title="which assets point to this one (takes a while)">Used by</button> `+(/projector/i.test(it.name.split("/").pop())?`<button class="b" data-a="proj" data-i="${i}">Copy projectors from…</button> `:""):"")+
     (it.base.toLowerCase().endsWith(".locres")?`<button class="b" data-a="loc" data-i="${i}">Open in Localization</button> `:"")+
     `<button class="b" data-a="extract" data-i="${i}">Extract</button></td></tr>`).join("");
   $("#br_out").innerHTML=h+"</table>";
   $$("#br_out a[data-d],#br_path a").forEach(a=>a.onclick=e=>{e.preventDefault();$("#br_q").value="";brLoad(a.dataset.d)});
   $$("#br_out button[data-a]").forEach(btn=>btn.onclick=guard(()=>brAct(btn.dataset.a,r.items[+btn.dataset.i])));
 });
+async function projDlg(dst){
+  const d=await api("/api/proj?pkg="+encodeURIComponent(dst));
+  const tbl=(rows,chk)=>`<table class="mono" style="width:100%;font-size:12px"><tr>${chk?"<th></th>":""}<th align=left>Tag</th><th align=left>Position x,y,z</th><th align=left>Rotation p,y,r°</th><th align=left>Scale</th><th align=left>Prio</th><th align=left>Texture</th></tr>`+
+    rows.map(p=>`<tr>${chk?`<td><input type="checkbox" class="pj_t" value="${esc(p.tag)}" ${d.projectors.some(x=>x.tag===p.tag)?"checked":"disabled"}></td>`:""}<td>${esc(p.tag)}</td><td>${p.loc.join(", ")}</td><td>${p.rot.join(", ")}</td><td>${p.scale[0]}${p.scale.every(v=>v===p.scale[0])?"":" …"}</td><td>${p.priority??""}</td><td>${esc(p.texture||"-")}</td></tr>`).join("")+"</table>";
+  const others=d.files.filter(f=>f!==d.pkg);
+  ask(`<h3>Copy projectors into ${esc(d.pkg.split("/").pop())}</h3><div class="sub">Now (${esc(d.origin)}):</div>${tbl(d.projectors)}
+    <div style="margin-top:12px"><input type="text" id="pj_src" list="pj_dl" placeholder="projector file to copy from" autocomplete="off" style="width:100%"><datalist id="pj_dl">${others.map(f=>`<option value="${esc(f)}">`).join("")}</datalist></div>
+    <div id="pj_out" class="sub">${others.length} projector file(s) found. Copies position, rotation, scale and priority of the ticked projectors (matched by tag). Textures are not changed.</div>`,
+   [{label:"Cancel"},{label:"Copy",cls:"p",fn:async()=>{
+     const src=$("#pj_src").value.trim();if(!src){toast("Pick a projector file to copy from","bad");return false}
+     const tags=$$(".pj_t").filter(c=>c.checked).map(c=>c.value);if($$(".pj_t").length&&!tags.length){toast("Tick at least one projector","bad");return false}
+     const r=await api("/api/proj/copy",{dst:d.pkg,src,tags});
+     toast(r.done.length?`Copied ${r.done.join(", ")}`+(r.missing.length?` (not in this file: ${r.missing.join(", ")})`:"")+" - press Save to keep it":"Nothing copied: no matching tags",r.done.length?"ok":"bad")}}]);
+  $("#pj_src").onchange=guard(async()=>{const src=$("#pj_src").value.trim();if(!d.files.includes(src))return;
+    const s=await api("/api/proj?pkg="+encodeURIComponent(src));$("#pj_out").innerHTML=`<div style="margin:6px 0">${esc(src.split("/").pop())} (${esc(s.origin)}):</div>`+tbl(s.projectors,true)});
+}
 async function brAct(a,it){
   if(a==="extract"){
     const go=async(mode)=>{const r=await api("/api/browse/extract",{bases:[it.base],overwrite:mode});
@@ -430,6 +446,7 @@ async function brAct(a,it){
       toast(r.files.length?`Extracted ${r.files.length} file(s) to your mod folder`:"Nothing new to extract","ok");brLoad()};
     await go(undefined);return}
   if(a==="edit"){const r=await api("/api/edit",{pkg:it.pkg});toast(r.launched?"Opened in UAssetGUI":("Staged "+r.path+(r.error?" ("+r.error+")":"")),r.launched?"ok":"bad");return}
+  if(a==="proj"){projDlg(it.pkg);return}
   if(a==="refs"){await api("/api/refs",{pkg:it.pkg});
     packTrack("Finding uses",r=>{if(r.error||!r.result)return;const h=r.result.hits;
       ask(`<h3>${h.length} asset(s) use ${esc(r.result.name)}</h3><div class="sub">${r.result.checked} assets checked${r.result.unreadable?`, ${r.result.unreadable} unreadable`:""}.</div><div class="sub mono" style="max-height:50vh;overflow:auto">${h.map(x=>esc(x.file)+` <span style="opacity:.6">${esc(x.origin)}</span>`).join("<br>")||"Nothing points to it - the game probably never loads it."}</div>`,[{label:"OK",cls:"p"}])});return}
@@ -514,7 +531,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v79";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v80";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   $("#where").textContent=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";
   if(ST.open){await loadPilots();const n=await refreshChanges();if(n&&!recoveryAsked){recoveryAsked=true;recoverDlg(n)}}else tab("setup");

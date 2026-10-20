@@ -13,6 +13,9 @@
 - Optionally move heavy actions (Port audio, extract) onto the background job log.
 - Slot-position copy tool for the 8 widgets the two pages share (leaderboard, race pace, raise-bike + a few dev ones).
 
+## Projectors (paused)
+- In-game: editing ProjectorCustom104_006 SidePlateRight changed nothing. Copy tool (v80) shipped; unverified in game. See `docs/PROJECTORS.md`.
+
 ## Riding style (v73) — waiting on Faizal
 - Check in game that an edited/copied riding style changes the rider's animation, and that a row added for a rider without one doesn't crash. SubRidingStyle = how much body lean etc. within the RidingStyle's limits (Faizal: minor, he copies it from another rider). Unknown meanings ( RidingStyle 6 has no preset row, LegOutType, StartLeg -1/0/1) are not known — only numbers shown.
 

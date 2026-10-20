@@ -10,7 +10,7 @@ Start it with `start.bat` (or `python motogp_master_editor.py web`) → http://1
 - Several of my past diagnoses were wrong (see `docs/HUD_PENALTIES.md`). State guesses as guesses; prefer adding diagnostics (what was skipped/why) over speculating.
 - After each change: bump the version, rebuild the zip, send it. Version lives in TWO places and must match:
   `VERSION = "vNN"` in `webui.py` and `HV="vNN"` in `webui.html` (page shows a red "close the tool and start it again" if they differ).
-  Current: **v79**.
+  Current: **v80**.
 - Deliverable convention: `./build_zip.sh` (builds `../motogp_master_editor.zip` incl. the Blender add-on zip), then send the zip.
 
 ## Layout (flat; imports are top-level)
@@ -25,6 +25,7 @@ Start it with `start.bat` (or `python motogp_master_editor.py web`) → http://1
 | `audioport.py` | Wwise bank port from other games (with `apply_gain`) |
 | `mgp_pak.py` / `mgp_pakwrite.py` | Pak reader (`PakSet`) / writer (v8 uncompressed) |
 | `mgp_locres.py` | `.locres` read/write |
+| `projfile.py` | Projector files (`ProjectorsDataSource`): parse/patch transforms; shared by the editor and the Blender add-on |
 | `blender_addon/mgp_projectors/` | Blender add-on for number projectors (see `docs/PROJECTORS.md`) |
 | `test_*.py` | Offline tests (most need CLI args — see `docs/TESTING.md`) |
 | `tests/jsd/*.js` | jsdom front-end harnesses (paths hardcoded; see docs) |

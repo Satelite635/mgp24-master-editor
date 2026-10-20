@@ -1,5 +1,6 @@
 # Changelog (versions shipped as zips; bump `VERSION` in webui.py AND `HV` in webui.html)
 
+- **v80** Browse: "Copy projectors from…" on Projector* assets (`/api/proj`, `/api/proj/copy`): table of both files (position, rotation in degrees, scale, priority, texture), tick tags, copies transform+priority (matched by tag, same size, staged). `projfile.py` moved to the top level (shared with the add-on). Custom-projector placement work paused (Faizal).
 - **v79** Browse: "Used by" button per asset (`/api/refs`, background job "Finding uses"): lists assets under Content/assets (mod folder + paks) whose bytes contain the package path.
 - **v78** Blender add-on 1.3: "Target mesh" (ray only hits that object, evaluated mesh) + panel line "Ray: hits X at N cm". v77 squares landed inside the bike because the ray hit internal parts first.
 - **v77** Blender add-on 1.2: projectors are decal-style (sphere + ray arrow along local -X); a "number" square is placed where the ray hits the bike (scene ray-cast, live via depsgraph handler). "Ray along +X" toggle, "Show misses". Plane/Box option removed.

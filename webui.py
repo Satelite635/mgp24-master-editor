@@ -12,10 +12,11 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v79"
+VERSION = "v80"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
+import projfile as PJ
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -346,6 +347,60 @@ def make_api(S):
                         out.add(os.path.relpath(os.path.join(d, f), root).replace(os.sep, "/"))
             return sorted(out)
         return _files(P, refresh)
+
+    # ---- number projectors (ProjectorCustom/ProjectorOfficial... data assets)
+    def _proj_open(P, pkg):
+        rel = C.game_to_rel(C.normalize_target(pkg)) + ".uasset"
+        ue = rel[:-7] + ".uexp"
+        if not P.src.exists(rel) or not P.src.exists(ue):
+            raise C.MgpError("projector file not found: %s" % pkg)
+        try:
+            a, projs = PJ.parse(P.src.read(rel), P.src.read(ue))
+        except ValueError as e:
+            raise C.MgpError("%s: %s" % (rel.rsplit("/", 1)[-1], e))
+        return rel, a, projs
+
+    def _rotator(q):
+        """UE quat (x,y,z,w) -> (pitch, yaw, roll) in degrees, for display only."""
+        import math
+        x, y, z, w = q
+        sp = max(-1.0, min(1.0, 2 * (w * y - z * x)))
+        return [round(math.degrees(math.asin(sp)), 2), round(math.degrees(math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))), 2),
+                round(math.degrees(math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))), 2)]
+
+    def _proj_rows(projs):
+        return [dict(tag=p["tag"], loc=[round(v, 3) for v in p["loc"]], rot=_rotator(p["quat"]), scale=[round(v, 4) for v in p["scale"]],
+                     priority=p["priority"], texture=(p["texture"] or "").rsplit("/", 1)[-1].split(".")[0]) for p in projs]
+
+    def proj_list(q, b):
+        """Projectors in one file, plus every projector file the mod folder/paks have (to copy from)."""
+        P = S.need()
+        pkg = (q.get("pkg") or [""])[0]
+        out = dict(files=sorted("/Game/" + r[len("Content/"):-7] for r in P.src.find("Content/assets/graphics/vehicles", ".uasset")
+                                if "projector" in r.rsplit("/", 1)[-1].lower()))
+        if pkg:
+            rel, _, projs = _proj_open(P, pkg)
+            out.update(pkg=C.normalize_target(pkg), origin=P.src.origin(rel), projectors=_proj_rows(projs))
+        return out
+
+    def proj_copy(q, b):
+        """Copy position/rotation/scale/priority of the chosen tags from `src` into `dst` (same file size; staged)."""
+        P = S.need()
+        rel, a, dprojs = _proj_open(P, b["dst"])
+        _, _, sprojs = _proj_open(P, b["src"])
+        want = set(b.get("tags") or [p["tag"] for p in sprojs])
+        vals = {p["tag"]: p for p in sprojs if p["tag"] in want}
+        done = PJ.patch(a, dprojs, vals)
+        if done:
+            PJ.parse(a.ua.to_bytes(), bytes(a.uexp))          # re-parses after the patch
+            for path, data in ((rel, a.ua.to_bytes()), (rel[:-7] + ".uexp", bytes(a.uexp))):
+                full = P.src.loose(path)
+                os.makedirs(os.path.dirname(full), exist_ok=True)
+                P.backup(full)
+                with open(full, "wb") as f:
+                    f.write(data)
+        missing = sorted(want - set(done))
+        return dict(done=done, missing=missing, projectors=_proj_rows(PJ.parse(a.ua.to_bytes(), bytes(a.uexp))[1]))
 
     def refs(q, b):
         """Background job: which assets (mod folder + paks) mention a package name in their name table."""
@@ -1622,7 +1677,7 @@ def make_api(S):
         return dict(value=val)
 
     return {
-        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
+        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("POST", "/api/proj/copy"): proj_copy, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
         ("POST", "/api/settings"): settings, ("GET", "/api/changes"): changes, ("POST", "/api/save"): save,
         ("POST", "/api/discard"): discard, ("POST", "/api/quit"): quit_, ("POST", "/api/open"): open_, ("GET", "/api/pilots"): pilots,
         ("GET", "/api/bindings"): bindings, ("GET", "/api/choices"): choices, ("POST", "/api/replace"): replace,

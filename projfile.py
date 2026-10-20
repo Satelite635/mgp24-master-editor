@@ -18,11 +18,16 @@ def _uexp(path):
 
 def load(path):
     """-> (Asset, [dict(tag, loc, quat, scale, texture, offs)]) ; quat is UE order (x, y, z, w)."""
-    a = uprops.Asset(open(path, "rb").read(), open(_uexp(path), "rb").read())
+    return parse(open(path, "rb").read(), open(_uexp(path), "rb").read())
+
+
+def parse(uasset_bytes, uexp_bytes):
+    """Same as load() from bytes (used by the editor, which reads through mod folder + paks)."""
+    a = uprops.Asset(uasset_bytes, uexp_bytes)
     t = uprops.tree(a)
     arr = next((p for p in t["props"] if p["name"] == "TaggedProjectors"), None)
     if arr is None:
-        raise ValueError("%s has no TaggedProjectors - not a projector file" % os.path.basename(path))
+        raise ValueError("no TaggedProjectors - not a projector file")
     out = []
     for item in arr.get("children") or []:
         pr = _kid(item, "Projector")
@@ -38,15 +43,15 @@ def load(path):
             bc = _kid(layers["children"][0], "BaseColorMap")
             tex = (bc or {}).get("value", "") or ""
         tag = (_kid(item, "Tag") or {}).get("value", item["name"])
+        pri = _kid(pr, "Priority") or {}
         out.append(dict(tag=tag, loc=list(loc["value"]), quat=list(rot["value"]), scale=list(sc["value"]),
-                        texture=tex, offs=dict(rot=rot["off"], loc=loc["off"], scale=sc["off"])))
+                        priority=pri.get("value"), texture=tex,
+                        offs=dict(rot=rot["off"], loc=loc["off"], scale=sc["off"], priority=pri.get("off"))))
     return a, out
 
 
-def save(path, values, backup=True):
-    """values: {tag: dict(loc, quat, scale)} - written in place (same file size). Returns the tags written.
-    The first save of a file keeps a copy as <name>.uasset.bak / .uexp.bak."""
-    a, projs = load(path)
+def patch(a, projs, values):
+    """Write {tag: dict(loc, quat, scale[, priority])} into the parsed asset `a` in place; returns the tags written."""
     done = []
     for p in projs:
         v = values.get(p["tag"])
@@ -55,7 +60,17 @@ def save(path, values, backup=True):
         a.set_value(p["offs"]["loc"], "floats", v["loc"])
         a.set_value(p["offs"]["rot"], "floats", v["quat"])
         a.set_value(p["offs"]["scale"], "floats", v["scale"])
+        if v.get("priority") is not None and p["offs"].get("priority") is not None:
+            a.set_value(p["offs"]["priority"], "num", v["priority"])
         done.append(p["tag"])
+    return done
+
+
+def save(path, values, backup=True):
+    """values: {tag: dict(loc, quat, scale)} - written in place (same file size). Returns the tags written.
+    The first save of a file keeps a copy as <name>.uasset.bak / .uexp.bak."""
+    a, projs = load(path)
+    done = patch(a, projs, values)
     if backup:
         for f in (path, _uexp(path)):
             if not os.path.exists(f + ".bak"):
