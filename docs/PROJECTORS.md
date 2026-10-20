@@ -4,7 +4,12 @@
 `customization_data/ProjectorCustomNNN_VVV`, class `ProjectorsDataSource_C`. `TaggedProjectors[]` of
 `IgnitionTaggedProjectorData {Tag, Projector: VehicleCustomizationProjectorData {Priority, Transform{Rotation Quat, Translation Vector (cm), Scale3D}, Layers[] {BaseColorMap, ..., TextProjectorData, ProjectableWidgetData{WidgetsDrawSize IntPoint}, Tags[]=Number}}}`.
 104_003/006: tags SidePlateRight (x81 y0 z96.5/98.0, pitch 37 yaw 180, scale 0.14, texture bikeShared/textures/47), FrontPlate and SidePlateLeft (x≈155, z0, scale 1, no texture → probably unused). 003 vs 006 differ only in that z.
-Guesses (unverified): texture 47 is a placeholder replaced by the rider's number; the projection is baked into the mesh's separate number UV channel.
+Guesses (unverified): texture 47 is a placeholder replaced by the rider's number.
+
+## How placement works (v77 reading, being verified)
+- First reading (3D plane at the transform) put the number inside the bike - wrong. UV-space reading also ruled out: the number lives on UVChannel_2 (the livery UV), nose island centre ≈ (0.22, 0.54), not rotated; doesn't match 81/96.5/37°.
+- Current reading: decal-style projector. It sits inside the bike (x81 z96.5 cm) and projects along local -X, which for this quat is forward and 37° UP (UE +X of quat (0.317,0,-0.948,0) = (-0.8,0,-0.6)). Faizal: the number is on the front nose just under the windscreen. Ray direction may be +X instead -> add-on toggle.
+- Number size at scale 1 still a guess (100 cm).
 
 ## Blender add-on (`blender_addon/mgp_projectors`, shipped as `mgp24_projectors_addon.zip` inside the tool zip)
 - `projfile.py` (no bpy): `load`, `save` (in-place float patch via `uprops.Asset.set_value`, first save keeps `.bak`), `ue_to_blender`/`blender_to_ue` (cm→unit, Y mirrored; quat (x,y,z,w) ↔ (w,-x,y,-z)).

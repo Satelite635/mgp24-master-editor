@@ -1,5 +1,6 @@
 # Changelog (versions shipped as zips; bump `VERSION` in webui.py AND `HV` in webui.html)
 
+- **v77** Blender add-on 1.2: projectors are decal-style (sphere + ray arrow along local -X); a "number" square is placed where the ray hits the bike (scene ray-cast, live via depsgraph handler). "Ray along +X" toggle, "Show misses". Plane/Box option removed.
 - **v76** Blender add-on 1.1: "Show as" Plane (default; mesh square in local YZ, normal = arrow/local +X) or Box; size label "Size (cm at scale 1)"; tip when Parent is empty.
 - **v75** Blender add-on `mgp24_projectors_addon.zip` (in the tool zip): show/move/rotate/scale bike number projectors on the model, write back, copy to another bike's projector file. `uprops` reads IntPoint/IntVector structs (`WidgetsDrawSize` was unreadable).
 - **v74** Crash check before packing (`_crash_scan`, shared with "Check mod"): Pack refuses when a loose mod asset imports another game's module (`/Script/sbk1`, `motogpXX`, `rideN`, `mxgp`), a UI asset needs a motogp24 class no game UI asset uses, or a `Font` export's native part differs in size from the game's own Fonts (SBK Font, "Serial size mismatch"). Dialog lists files; "Pack anyway" (`force`) skips once. Non-UI assets with unknown classes are warnings only (class list is learned from UI assets). Font check untested on real files.

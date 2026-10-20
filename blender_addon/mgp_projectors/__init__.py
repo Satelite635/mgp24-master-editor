@@ -1,13 +1,13 @@
 """MGP24 Projectors - show and edit MotoGP 24 bike number projectors (ProjectorCustomNNN_VVV) in Blender.
 
-Load a projector .uasset (its .uexp must sit next to it): every projector becomes a box (empty) you can move,
-rotate and scale. "Write back" saves the boxes' transforms into the file (same size, only those floats change).
+Load a projector .uasset (its .uexp must sit next to it): every projector becomes a small sphere (+ ray arrow) you can move,
+rotate and scale; a square shows where its ray hits the bike (where the number should land). "Write back" saves the boxes' transforms into the file (same size, only those floats change).
 "Write to another file" copies the placement onto another bike's projector file (matched by tag).
 """
 bl_info = {
     "name": "MGP24 Projectors",
     "author": "MGP24 Master Editor",
-    "version": (1, 1, 0),
+    "version": (1, 2, 0),
     "blender": (3, 6, 0),
     "location": "3D View > Sidebar (N) > MGP24",
     "description": "Show/edit MotoGP 24 number projectors (ProjectorCustom*.uasset)",
@@ -23,21 +23,83 @@ if _here not in sys.path:
 import bpy
 from bpy.props import StringProperty, FloatProperty, BoolProperty, PointerProperty
 from bpy_extras.io_utils import ImportHelper
-from mathutils import Quaternion
+from mathutils import Matrix, Quaternion, Vector
 
 import projfile
 
 
-def _plane_mesh(size):
-    """Square in the local YZ plane (normal = local +X, the arrow), `size` wide. Shared per size."""
-    name = "MGP_ProjPlane_%.4f" % size
-    me = bpy.data.meshes.get(name)
+def _square_mesh():
+    """1 x 1 square in the local YZ plane (facing local X). Shared by all number previews."""
+    me = bpy.data.meshes.get("MGP_NumberSquare")
     if not me:
-        h = size / 2
-        me = bpy.data.meshes.new(name)
-        me.from_pydata([(0, -h, -h), (0, h, -h), (0, h, h), (0, -h, h)], [], [(0, 1, 2, 3)])
+        me = bpy.data.meshes.new("MGP_NumberSquare")
+        me.from_pydata([(0, -.5, -.5), (0, .5, -.5), (0, .5, .5), (0, -.5, .5)], [], [(0, 1, 2, 3)])
         me.update()
     return me
+
+
+def _is_ours(o):
+    return o is not None and ("mgp_tag" in o or "mgp_hit" in o)
+
+
+def _ray_hit(scene, depsgraph, origin, direction, max_dist=5.0):
+    """First bike surface hit (skipping our own preview objects)."""
+    o = origin.copy()
+    for _ in range(16):
+        ok, loc, nrm, _i, obj, _m = scene.ray_cast(depsgraph, o, direction, distance=max_dist)
+        if not ok:
+            return None
+        if not _is_ours(obj) and not (obj and obj.original and _is_ours(obj.original)):
+            return loc, nrm
+        o = loc + direction * 1e-4
+    return None
+
+
+_busy = False
+
+
+def update_previews(scene, depsgraph=None):
+    """Put each projector's number square where its -X ray (the projection direction, our best reading) hits the bike."""
+    global _busy
+    if _busy:
+        return
+    _busy = True
+    try:
+        depsgraph = depsgraph or bpy.context.evaluated_depsgraph_get()
+        s = scene.mgp_proj
+        for p in [o for o in scene.objects if "mgp_tag" in o]:
+            hit_obj = bpy.data.objects.get(p.get("mgp_hit_name", ""))
+            if not hit_obj:
+                continue
+            mw = p.matrix_world
+            loc, rot, sc = mw.decompose()
+            d = (rot @ Vector((1 if s.ray_plus_x else -1, 0, 0))).normalized()
+            hit = _ray_hit(scene, depsgraph, loc, d)
+            size = s.box_cm * s.unit
+            if hit:
+                pos = hit[0] - d * 0.002                    # a hair in front of the surface
+                hit_obj.hide_viewport = False
+            else:
+                pos = loc + d * 0.3
+                hit_obj.hide_viewport = not s.show_miss
+            want = Matrix.LocRotScale(pos, rot, Vector((1, sc.y * size, sc.z * size)))
+            if any(abs(a - b) > 1e-6 for ra, rb in zip(hit_obj.matrix_world, want) for a, b in zip(ra, rb)):
+                hit_obj.matrix_world = want
+    finally:
+        _busy = False
+
+
+def _flip_arrows(scene):
+    for o in scene.objects:
+        if o.name.endswith(" ray") and "mgp_hit" in o:
+            o.rotation_euler = (0, 1.5707963 if scene.mgp_proj.ray_plus_x else -1.5707963, 0)
+    update_previews(scene)
+
+
+@bpy.app.handlers.persistent
+def _on_depsgraph(scene, depsgraph):
+    if any(isinstance(u.id, bpy.types.Object) and "mgp_tag" in u.id and u.is_updated_transform for u in depsgraph.updates):
+        update_previews(scene, depsgraph)
 
 
 def _settings(context):
@@ -78,11 +140,15 @@ class MGPProjSettings(bpy.types.PropertyGroup):
                         description="Blender units per UE centimetre (0.01 = model imported in metres)")
     flip_y: BoolProperty(name="Mirror Y", default=True,
                          description="UE is left-handed; most UE importers mirror Y. Turn off if boxes land on the wrong side")
-    shape: bpy.props.EnumProperty(name="Show as", default="PLANE", items=[
-        ("PLANE", "Plane", "A flat square facing along the arrow (where the number lands)"),
-        ("BOX", "Box", "The projector volume (decal-style box)")])
-    box_cm: FloatProperty(name="Size (cm at scale 1)", default=100.0, min=0.1,
-                          description="Display only - how big a projector of scale 1 is drawn. Not written to the file")
+    box_cm: FloatProperty(name="Number size (cm at scale 1)", default=100.0, min=0.1,
+                          description="Display only (a guess): how big the number square is at projector scale 1. Not written to the file",
+                          update=lambda self, ctx: update_previews(ctx.scene))
+    ray_plus_x: BoolProperty(name="Ray along +X", default=False,
+                             description="Projection direction is a guess (-X). Tick if the squares land on the wrong side of the bike",
+                             update=lambda self, ctx: _flip_arrows(ctx.scene))
+    show_miss: BoolProperty(name="Show misses", default=True,
+                            description="Also show the square when the ray hits nothing (unused projectors)",
+                            update=lambda self, ctx: update_previews(ctx.scene))
     parent: PointerProperty(name="Parent", type=bpy.types.Object,
                             description="Object whose origin is the bike's origin (e.g. the VEHICLE_BASE armature). Empty = world origin")
 
@@ -112,13 +178,9 @@ class MGP_OT_load(bpy.types.Operator, ImportHelper):
             context.scene.collection.children.link(coll)
         for p in projs:
             loc, quat, sc = projfile.ue_to_blender(p["loc"], p["quat"], p["scale"], s.unit, s.flip_y)
-            if s.shape == "PLANE":
-                box = bpy.data.objects.new(p["tag"], _plane_mesh(s.box_cm * s.unit))
-                box.show_wire = True
-            else:
-                box = bpy.data.objects.new(p["tag"], None)
-                box.empty_display_type = "CUBE"
-                box.empty_display_size = s.box_cm * s.unit / 2
+            box = bpy.data.objects.new(p["tag"], None)     # the projector itself: move/rotate/scale this
+            box.empty_display_type = "SPHERE"
+            box.empty_display_size = 0.03 / max(min(sc), 1e-3)  # ~3 cm whatever its scale
             box["mgp_tag"] = p["tag"]
             box["mgp_texture"] = p["texture"]
             coll.objects.link(box)
@@ -126,15 +188,23 @@ class MGP_OT_load(bpy.types.Operator, ImportHelper):
                 box.parent = s.parent
             box.rotation_mode = "QUATERNION"
             box.location, box.rotation_quaternion, box.scale = loc, Quaternion(quat), sc
-            arrow = bpy.data.objects.new(p["tag"] + " dir", None)   # local +X: likely the projection axis (unverified)
+            arrow = bpy.data.objects.new(p["tag"] + " ray", None)   # local -X: the projection direction (our reading)
             arrow.empty_display_type = "SINGLE_ARROW"
-            arrow.empty_display_size = s.box_cm * s.unit
-            arrow.rotation_euler = (0, 1.5707963, 0)               # arrow points along +Z; turn it to +X
+            arrow.empty_display_size = 0.5 / max(min(sc), 1e-3)      # ~50 cm
+            arrow.rotation_euler = (0, 1.5707963 if s.ray_plus_x else -1.5707963, 0)   # +Z arrow turned to -X (or +X)
             arrow.parent = box
             arrow.hide_select = True
+            arrow["mgp_hit"] = 1
             coll.objects.link(arrow)
-            if not p["texture"]:
-                box.color = (0.5, 0.5, 0.5, 1)
+            num = bpy.data.objects.new(p["tag"] + " number", _square_mesh())   # preview where the number lands
+            num["mgp_hit"] = 1
+            num.hide_select = True
+            num.show_wire = True
+            num.color = (1, 0.8, 0, 1) if p["texture"] else (0.5, 0.5, 0.5, 1)
+            coll.objects.link(num)
+            box["mgp_hit_name"] = num.name
+        context.view_layer.update()
+        update_previews(context.scene)
         self.report({"INFO"}, "Loaded %d projector(s): %s" % (len(projs), ", ".join(p["tag"] for p in projs)))
         return {"FINISHED"}
 
@@ -195,8 +265,9 @@ class MGP_PT_panel(bpy.types.Panel):
         col.prop(s, "parent")
         col.prop(s, "unit")
         col.prop(s, "flip_y")
-        col.prop(s, "shape")
         col.prop(s, "box_cm")
+        col.prop(s, "ray_plus_x")
+        col.prop(s, "show_miss")
         if not s.parent:
             lay.label(text="Tip: set Parent to the bike root (VEHICLE_BASE)", icon="INFO")
         lay.operator("mgp.proj_load", icon="IMPORT")
@@ -221,9 +292,12 @@ def register():
     for c in classes:
         bpy.utils.register_class(c)
     bpy.types.Scene.mgp_proj = PointerProperty(type=MGPProjSettings)
+    bpy.app.handlers.depsgraph_update_post.append(_on_depsgraph)
 
 
 def unregister():
+    if _on_depsgraph in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(_on_depsgraph)
     del bpy.types.Scene.mgp_proj
     for c in reversed(classes):
         bpy.utils.unregister_class(c)
