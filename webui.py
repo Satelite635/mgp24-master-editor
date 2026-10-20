@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v81"
+VERSION = "v82"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -369,21 +369,30 @@ def make_api(S):
         variant set references; if none, Projector* files in the bike's customization_data folder with the same variant tag."""
         rel = bike_rel(P, group or "official")
         t = P.table(rel) if rel else None
-        if not t or key not in t.rows or not is_game(t.target(key)):
-            return [], "no bike row for this entry"
-        obj = t.target(key)
+        obj = t.target(key) if t and key in t.rows and is_game(t.target(key)) else ""
         pkg = obj.partition(".")[0]
-        found, pkgs = [], [pkg]
-        try:
-            pkgs += [m.pkg for m in C.resolve_set(P.src, obj)["members"]]
-        except C.MgpError:
-            pass
+        pkgs = [pkg] if pkg else []
+        if obj:
+            try:
+                pkgs += [m.pkg for m in C.resolve_set(P.src, obj)["members"]]
+            except C.MgpError:
+                pass
+        for _r, _c, tgt in P.pilot_bindings(key, group):        # every customization_data the entry points at
+            if is_game(tgt):
+                pkgs.append(tgt.partition(".")[0])
+        found, checked = [], []
         for cur in dict.fromkeys(pkgs):
             r = C.game_to_rel(cur) + ".uasset"
             if not P.src.exists(r):
                 continue
-            for n in C.UAsset(P.src.read(r)).texts():
-                if n.startswith("/Game/") and "." not in n and "projector" in n.rsplit("/", 1)[-1].lower() \
+            checked.append(cur.rsplit("/", 1)[-1])
+            try:
+                names = C.UAsset(P.src.read(r)).texts()
+            except Exception:
+                continue
+            for n in names:
+                n = n.partition(".")[0].partition(":")[0]             # soft paths are '/Game/x/Name.Name'
+                if n.startswith("/Game/") and "projector" in n.rsplit("/", 1)[-1].lower() \
                         and n not in [f["pkg"] for f in found] and P.src.exists(C.game_to_rel(n) + ".uasset"):
                     found.append(dict(pkg=n, how="used by " + cur.rsplit("/", 1)[-1]))
         if not found and "/customization_data/" in pkg and "_" in pkg.rsplit("/", 1)[-1]:
@@ -392,7 +401,9 @@ def make_api(S):
                 b = r.rsplit("/", 1)[-1][:-7]
                 if "projector" in b.lower() and b.endswith("_" + tag):
                     found.append(dict(pkg=folder + "/" + b, how="guessed: same folder and variant %s as %s" % (tag, pkg.rsplit("/", 1)[-1])))
-        return found, "" if found else "no projector file found for %s" % pkg.rsplit("/", 1)[-1]
+        if not pkgs:
+            return [], "this entry has no bindings"
+        return found, "" if found else "no projector file found; checked %d asset(s): %s" % (len(checked), ", ".join(checked[:12]) + (" ..." if len(checked) > 12 else ""))
 
     def proj_rider(q, b):
         P = S.need()
