@@ -6,7 +6,7 @@
 - Hyphen vs underscore: `X-Regular` is typically the FontFace, `X_Regular` the Font.
 - Faizal's SBK-sourced assets: `F_TTSupermolotNeue-{Bold,Light,Regular}_Mono_Font` (Font) and `FF_TTSupermolotNeue-{Bold,Light,Regular}_Mono` (FontFace). The `FF_` ones work in GP24; the `F_…_Font` / `MotoGPText-*_Mono_Font` Font assets do **not** (serial size mismatch crash: file has 359 bytes, game's loader reads 358).
 
-## Tool (v66→v70)
+## Tool (v66→v70) — button hidden since v83 (Faizal copies the Fonts folder from his working pak instead)
 `hudskin.font_faces`, `font_weight`, `retarget_font(ua, {old_face: new_face})`: repoints the Font asset's FontFace + package **import records** to `/Game/assets/ui/Fonts/FF_TTSupermolotNeue-<Weight>_Mono`, weight inferred from names (Bold/Black/Heavy→Bold, Light/Thin→Light, else Regular; italics fall back to Regular). Skips fallback CJK faces (`FONT_KEEP`). Endpoints `/api/fonts/list` (rows + skipped reasons + origin) and `/api/fonts/apply`. Verified offline on his `MotoGPText_Regular` (export size unchanged 2192, offsets consistent). **Not verified in game.**
 Default-unticked in the list: Digital-7, Accelerator, Vehicle_*, American_Purpose, Characters_Font_Foundry, F_TTSupermolot*.
 
