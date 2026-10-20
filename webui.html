@@ -531,7 +531,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v80";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v81";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   $("#where").textContent=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";
   if(ST.open){await loadPilots();const n=await refreshChanges();if(n&&!recoveryAsked){recoveryAsked=true;recoverDlg(n)}}else tab("setup");
@@ -578,6 +578,7 @@ $("#rsearch").oninput=drawPilots;
 const selectPilot=guard(async k=>{
   cur=k;drawPilots();
   [bindings,info,style]=await Promise.all([api("/api/bindings?group="+grp+"&key="+encodeURIComponent(k)),api("/api/describe?group="+grp+"&key="+encodeURIComponent(k)),api("/api/style?key="+encodeURIComponent(k)).catch(e=>({error:e.message}))]);
+  projR=await api("/api/proj/rider?group="+grp+"&key="+encodeURIComponent(k)).catch(e=>({error:e.message}));
   drawPilot();
 });
 function drawPilot(){
@@ -596,9 +597,9 @@ function drawPilot(){
     }
     h+="</table>";
   }
-  h+=styleHtml();
+  h+=projHtml()+styleHtml();
   $("#rpane").innerHTML=h;
-  styleWire();
+  projWire();styleWire();
   $$("#rpane button[data-rel]").forEach(b=>b.onclick=()=>replaceDlg(b.dataset.rel));
   $$("#rpane a.sug").forEach(a=>a.onclick=guard(async e=>{e.preventDefault();finish(await api("/api/replace",{rel:a.dataset.rel,key:cur,target:a.dataset.p}))}));
   $$("#rpane button[data-clone]").forEach(b=>b.onclick=()=>cloneRowDlg(b.dataset.clone));
@@ -713,6 +714,36 @@ async function cloneRowDlg(rel){
   $$("input[name=cm]").forEach(r=>r.onchange=async()=>{mode=r.value;if(!edited){const p=await call(true);$("#cl_name").value=p.new_name}refresh()});
   $("#cl_name").oninput=()=>{edited=true;name=$("#cl_name").value.trim();clearTimeout(window._ct);window._ct=setTimeout(refresh,250)};
   show(first.mode===mode?first:await call(true));
+}
+let projR=null,projFiles=null;
+function projHtml(){
+  if(!projR)return"";
+  let h=`<div class="cat">number projectors</div>`;
+  if(projR.error)return h+`<div class="help" style="color:var(--bad)">${esc(projR.error)}</div>`;
+  if(!projR.found.length)return h+`<div class="help">${esc(projR.why)}. Tell Claude which file this bike uses.</div>`;
+  h+=`<div class="bar">${projR.found.length>1?`<select id="pr_file">${projR.found.map(f=>`<option value="${esc(f.pkg)}" ${f.pkg===projR.pkg?"selected":""}>${esc(f.pkg.split("/").pop())}</option>`).join("")}</select>`:`<span class="mono">${esc(projR.pkg.split("/").pop())}</span>`}
+    <span class="help">${esc((projR.found.find(f=>f.pkg===projR.pkg)||{}).how||"")}</span> <span class="tag ${projR.origin==="unsaved"?"warn":"ok"}">${esc(projR.origin)}</span></div>`;
+  const n3=(cls,v,w)=>v.map((x,j)=>`<input type="text" class="${cls}" data-j="${j}" value="${esc(String(x))}" style="width:${w}px">`).join(" ");
+  h+=`<table><tr><th style="width:150px">Projector</th><th>Position x, y, z (cm)</th><th>Rotation pitch, yaw, roll (°)</th><th>Scale x, y, z</th><th>Prio</th><th>Texture</th><th></th></tr>`;
+  projR.projectors.forEach((p,i)=>{h+=`<tr data-pi="${i}"><td class="mono">${esc(p.tag)}</td><td style="white-space:nowrap">${n3("pr_l",p.loc,64)}</td><td style="white-space:nowrap">${n3("pr_r",p.rot,58)}</td><td style="white-space:nowrap">${n3("pr_s",p.scale,52)}</td>
+    <td><input type="text" class="pr_p" value="${esc(String(p.priority??""))}" style="width:36px"></td><td class="mono">${esc(p.texture||"-")}</td><td><button class="b" data-pa="${i}">Apply</button></td></tr>`});
+  return h+`</table><div class="bar"><input type="text" id="pr_src" list="pr_dl" placeholder="rider or projector file to copy from" autocomplete="off" style="width:360px"><datalist id="pr_dl"></datalist> <button class="b" id="pr_copy">Copy all projectors</button>
+    <span class="help">Copies position, rotation, scale, priority (matched by name). Not verified in game yet.</span></div>`;
+}
+function projWire(){
+  if(!projR||!projR.projectors)return;
+  const reload=async pkg=>{projR=await api("/api/proj/rider?group="+grp+"&key="+encodeURIComponent(cur)+(pkg?"&pkg="+encodeURIComponent(pkg):""));drawPilot()};
+  const f=$("#pr_file");if(f)f.onchange=guard(()=>reload(f.value));
+  $$("#rpane button[data-pa]").forEach(b=>b.onclick=guard(async()=>{const tr=b.closest("tr"),p=projR.projectors[+b.dataset.pa];
+    const g=c=>[...tr.querySelectorAll("."+c)].map(x=>x.value.trim());const nums=[...g("pr_l"),...g("pr_r"),...g("pr_s")];
+    if(nums.some(v=>v===""||!isFinite(Number(v)))){toast(p.tag+": every field needs a number","bad");return}
+    await api("/api/proj/set",{pkg:projR.pkg,tag:p.tag,loc:g("pr_l"),rot:g("pr_r"),scale:g("pr_s"),priority:tr.querySelector(".pr_p").value.trim()});
+    toast(p.tag+" updated - press Save to keep it","ok");await reload(projR.pkg)}));
+  const fill=async()=>{if(!projFiles)projFiles=(await api("/api/proj")).files;$("#pr_dl").innerHTML=[...pilots.filter(x=>x!==cur),...projFiles.filter(x=>x!==projR.pkg)].map(x=>`<option value="${esc(x)}">`).join("")};
+  $("#pr_src").onfocus=guard(fill);
+  $("#pr_copy").onclick=guard(async()=>{const src=$("#pr_src").value.trim();if(!src){toast("Pick a rider or projector file","bad");return}
+    const r=await api("/api/proj/copy",{dst:projR.pkg,src,group:grp});
+    toast(r.done.length?`Copied ${r.done.join(", ")} from ${r.src.split("/").pop()}`+(r.missing.length?` (not in this file: ${r.missing.join(", ")})`:"")+" - press Save to keep it":"Nothing copied: no matching projector names",r.done.length?"ok":"bad");await reload(projR.pkg)});
 }
 let style=null;
 function styleHtml(){

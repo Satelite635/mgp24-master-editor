@@ -96,3 +96,28 @@ def blender_to_ue(loc, quat_wxyz, scale, unit=0.01, flip_y=True):
     if flip_y:
         return [x / unit, -y / unit, z / unit], [-bx, by, -bz, w], list(scale)
     return [x / unit, y / unit, z / unit], [bx, by, bz, w], list(scale)
+
+
+# ---- FRotator (degrees: pitch, yaw, roll) <-> FQuat (x, y, z, w), same formulas as UE 4.27 (Rotator.Quaternion / Quat.Rotator)
+def rotator_to_quat(pitch, yaw, roll):
+    import math
+    p, y, r = (math.radians(v) / 2 for v in (pitch, yaw, roll))
+    sp, cp, sy, cy, sr, cr = math.sin(p), math.cos(p), math.sin(y), math.cos(y), math.sin(r), math.cos(r)
+    return [cr * sp * sy - sr * cp * cy, -cr * sp * cy - sr * cp * sy, cr * cp * sy - sr * sp * cy, cr * cp * cy + sr * sp * sy]
+
+
+def quat_to_rotator(q):
+    import math
+    x, y, z, w = q
+    sing = z * x - w * y
+    yaw = math.degrees(math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
+    if sing < -0.4999995:
+        return [-90.0, yaw, _norm(-yaw - 2 * math.degrees(math.atan2(x, w)))]
+    if sing > 0.4999995:
+        return [90.0, yaw, _norm(yaw - 2 * math.degrees(math.atan2(x, w)))]
+    return [math.degrees(math.asin(2 * sing)), yaw, math.degrees(math.atan2(-2 * (w * x + y * z), 1 - 2 * (x * x + y * y)))]
+
+
+def _norm(a):
+    a = (a + 180) % 360 - 180
+    return a

@@ -17,6 +17,9 @@ Guesses (unverified): texture 47 is a placeholder replaced by the rider's number
 Browse → a `Projector*` asset → "Copy projectors from…". Copies Translation/Rotation/Scale3D/Priority per tag; textures/layers untouched. Verified offline only (003→006 SidePlateRight z 98→96.5, staged).
 **Status:** placement editing paused by Faizal (Oct 20) after the in-game test showed 104_006 SidePlateRight edits change nothing. Next if resumed: Browse "Used by" on that file.
 
+## Rider page (v81)
+Section "number projectors" above riding style. Lookup: `_rider_projectors` in webui.py (see CHANGELOG v81). Unknown whether the real bike assets reference their projector (only tested with a fake bike asset) - if lookups say "guessed" or "no projector file", ask Faizal which file a rider uses.
+
 ## Blender add-on (`blender_addon/mgp_projectors`, shipped as `mgp24_projectors_addon.zip` inside the tool zip)
 - `projfile.py` (no bpy): `load`, `save` (in-place float patch via `uprops.Asset.set_value`, first save keeps `.bak`), `ue_to_blender`/`blender_to_ue` (cm→unit, Y mirrored; quat (x,y,z,w) ↔ (w,-x,y,-z)).
 - `__init__.py`: N-panel "MGP24": Parent (bike origin object), Unit scale (0.01), Mirror Y, Box size (display only, guess 100 cm at scale 1). Load → one object per projector ("Show as": Plane = shared mesh square in local YZ facing local +X, default since v76; Box = CUBE empty) + child arrow along local +X (projection axis = guess). Write back / Write to another file (matched by tag). Uses `matrix_basis.decompose()` so any rotation mode works.
