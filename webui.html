@@ -120,6 +120,10 @@ dialog input[type=text]{width:100%;padding:8px}
       <div id="hu_visout"></div>
       <div class="bar" style="display:none"><button class="b" id="fn_scan">Replace fonts with TT Supermolot</button><span class="help">needs the FF_TTSupermolotNeue-* font files in Content/assets/ui/Fonts</span></div>
       <div id="fn_out"></div>
+      <h3 style="margin:18px 0 6px">Font swap</h3>
+      <div class="help">Replaces a game font with a real font file (.ttf / .otf / .ufont): it is written as &lt;font&gt;.ufont, which the game's own font asset reads (how the big MotoGPText-Display text already works). Another game's font asset of the same name in your mod is replaced by the game's own.</div>
+      <div class="pathrow" style="margin-top:8px"><input type="text" id="fs_path" placeholder="font file, e.g. C:\fonts\TTSupermolotNeue-Regular.ttf"><button class="b" data-pick="fs_path" data-kind="file">Browse</button><button class="b" id="fs_check">Check</button><button class="b" id="fs_list">List game fonts</button></div>
+      <div id="fs_info" class="help"></div><div id="fs_out"></div>
       <div id="hu_out"></div>
     </div>
   </section>
@@ -316,6 +320,17 @@ $("#hu_go").onclick=guard(async()=>{const r=await api("/api/hud/compare",huBody(
   $("#hu_bar").style.display=huRows.length?"":"none";huDraw()});
 $("#hu_graft").onclick=guard(async()=>{const q=await api("/api/hud/graft",huBody());toast(q.file+": swapped "+(q.swapped.join(", ")||"nothing (already done)")+"; changed visibility of "+q.hidden.length+" widget(s) ["+q.hidden.join(", ")+"] - Save to write","ok");await refreshChanges()});
 $("#hu_swap").onclick=guard(async()=>{await api("/api/hud/swappos",huBody());toast("Swapped - Save to write","ok");await refreshChanges()});
+let fsFaces=[];
+const fsDraw=()=>{$("#fs_out").innerHTML=`<table class="mono" style="width:100%;margin:8px 0;font-size:12px"><tr><th></th><th align=left>Game font</th><th align=left>Used by</th><th align=left>Your mod now</th></tr>`+
+  fsFaces.map((f,i)=>`<tr><td><input type="checkbox" class="fs_c" data-i="${i}"></td><td>${esc(f.name)}</td><td style="opacity:.7">${esc(f.used_by.join(", ")||"-")}</td><td>${f.mod_ufont?`<span style="color:var(--ok)">${esc(f.mod_ufont)}</span>`:`<span style="opacity:.6">original${f.game_ufont?"":" (no .ufont in game)"}</span>`}${f.mod_face?` <span style="color:var(--warn)">⚠ ${esc(f.mod_face)}</span>`:""}</td></tr>`).join("")+
+  `</table><button class="b p" id="fs_apply">Use this font for the ticked fonts</button>`;
+  $("#fs_apply").onclick=guard(async()=>{const faces=$$(".fs_c").filter(c=>c.checked).map(c=>fsFaces[+c.dataset.i].name);
+    if(!faces.length){toast("Tick at least one game font","bad");return}
+    const r=await api("/api/fontswap/apply",{path:$("#fs_path").value,faces});
+    toast(`${r.font} now replaces ${r.done.join(", ")}`+(r.restored.length?` (put the game's own font asset back for ${r.restored.join(", ")})`:"")+" - press Save, then Pack","ok");
+    fsFaces=(await api("/api/fontswap")).faces;fsDraw()})};
+$("#fs_list").onclick=guard(async()=>{$("#fs_out").textContent="Reading the game's fonts…";fsFaces=(await api("/api/fontswap")).faces;fsDraw()});
+$("#fs_check").onclick=guard(async()=>{const r=await api("/api/fontswap/check",{path:$("#fs_path").value});$("#fs_info").textContent=`${r.full} (${r.kind})`});
 $("#fn_scan").onclick=guard(async()=>{const r=await api("/api/fonts/list",{});
   $("#fn_out").innerHTML=`<table class="mono" style="margin:10px 0"><tr><th></th><th align=left>Font asset</th><th align=left>Face now</th><th align=left>From</th></tr>`+
    r.rows.map((x,i)=>`<tr><td><input type=checkbox class="fnc" data-r="${esc(x.rel)}" ${x.pick?"checked":""}></td><td>${esc(x.name)}</td><td>${esc(x.faces.join(", "))}</td><td>${esc(x.origin||"")}</td></tr>`).join("")+
@@ -537,7 +552,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v85";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v86";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}
   if(ST.open){await loadPilots();const n=await refreshChanges();if(n&&!recoveryAsked){recoveryAsked=true;recoverDlg(n)}}else tab("setup");

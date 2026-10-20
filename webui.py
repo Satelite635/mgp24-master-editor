@@ -12,11 +12,12 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v85"
+VERSION = "v86"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
 import projfile as PJ
+import fontswap as FS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -1231,6 +1232,94 @@ def make_api(S):
 
     FONT_DIR = "Content/assets/ui/Fonts"
 
+    def _fs_faces(P):
+        """The game's FontFace assets (base paks) + what the mod folder does to each."""
+        if not P.paks:
+            raise C.MgpError("the game's paks are needed to list its fonts (Setup tab)")
+        rels = sorted(r for r in P.paks.find(FONT_DIR, ".uasset"))
+        faces, users = [], {}
+        for r in P.src.find(FONT_DIR, ".uasset"):                   # Font assets -> faces they use (as the game will load them)
+            try:
+                a = U.Asset(P.src.read(r), b"")
+            except Exception:
+                continue
+            if any(e["cls"] == "Font" for e in a.exports):
+                for im in a.imports:
+                    if im["cls"] == "FontFace":
+                        users.setdefault(im["name"], []).append(r.rsplit("/", 1)[-1][:-7])
+        for r in rels:
+            base = P.paks.read_base(r)
+            if base is None:
+                continue
+            try:
+                a = U.Asset(base, b"")
+            except Exception:
+                continue
+            if not any(e["cls"] == "FontFace" for e in a.exports):
+                continue
+            name = r.rsplit("/", 1)[-1][:-7]
+            uf = r[:-7] + ".ufont"
+            f = dict(name=name, used_by=sorted(users.get(name, [])), game_ufont=P.paks.read_base(uf) is not None,
+                     mod_ufont="", mod_face="")
+            if os.path.exists(P.src.loose(uf)) or (P.src.base and os.path.exists(P.src._base(uf))):
+                try:
+                    f["mod_ufont"] = FS.font_info(P.src.read(uf))["full"]
+                except ValueError as e:
+                    f["mod_ufont"] = "(%s)" % e
+            loose = [x for x in (P.src.loose(r), P.src._base(r) if P.src.base else None) if x and os.path.exists(x)]
+            if loose:
+                mine = open(loose[0], "rb").read()
+                ux = loose[0][:-7] + ".uexp"
+                mine_x = open(ux, "rb").read() if os.path.exists(ux) else b""
+                if mine != base or mine_x != (P.paks.read_base(r[:-7] + ".uexp") or b""):
+                    f["mod_face"] = "another game's FontFace (points to projects/sbk1)" if b"sbk1" in mine + mine_x else "modded FontFace"
+            faces.append(f)
+        return faces
+
+    def fontswap_list(q, b):
+        return dict(faces=_fs_faces(S.need()))
+
+    def fontswap_check(q, b):
+        path = (b.get("path") or "").strip().strip('"')
+        if not path or not os.path.isfile(path):
+            raise C.MgpError("font file not found: %r" % path)
+        try:
+            return FS.font_info(open(path, "rb").read())
+        except ValueError as e:
+            raise C.MgpError("%s: %s" % (os.path.basename(path), e))
+
+    def fontswap_apply(q, b):
+        """Write the font file as <face>.ufont for each chosen face; where the mod folder has a different
+        FontFace asset of that name (e.g. SBK's), put the game's own back so it reads that .ufont. Staged."""
+        P = S.need()
+        path = (b.get("path") or "").strip().strip('"')
+        data = open(path, "rb").read() if path and os.path.isfile(path) else None
+        if data is None:
+            raise C.MgpError("font file not found: %r" % path)
+        info = FS.font_info(data)
+        known = {f["name"]: f for f in _fs_faces(P)}
+        done, restored = [], []
+        for name in b.get("faces") or []:
+            if name not in known:
+                raise C.MgpError("not one of the game's fonts: %s" % name)
+            stem = FONT_DIR + "/" + name
+            out = [(stem + ".ufont", data)]
+            if known[name]["mod_face"]:
+                for ext in (".uasset", ".uexp"):
+                    orig = P.paks.read_base(stem + ext)
+                    if orig is None:
+                        raise C.MgpError("the game has no original %s%s to put back" % (name, ext))
+                    out.append((stem + ext, orig))
+                restored.append(name)
+            for rel, blob in out:
+                full = P.src.loose(rel)
+                os.makedirs(os.path.dirname(full), exist_ok=True)
+                P.backup(full)
+                with open(full, "wb") as f:
+                    f.write(blob)
+            done.append(name)
+        return dict(font=info["full"], done=done, restored=restored)
+
     def fonts_list(q, b):
         P = S.need()
         found = P.src.find(FONT_DIR, ".uasset")
@@ -1773,7 +1862,7 @@ def make_api(S):
         return dict(value=val)
 
     return {
-        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("GET", "/api/proj/rider"): proj_rider, ("POST", "/api/proj/set"): proj_set, ("POST", "/api/proj/copy"): proj_copy, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
+        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("GET", "/api/fontswap"): fontswap_list, ("POST", "/api/fontswap/check"): fontswap_check, ("POST", "/api/fontswap/apply"): fontswap_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("GET", "/api/proj/rider"): proj_rider, ("POST", "/api/proj/set"): proj_set, ("POST", "/api/proj/copy"): proj_copy, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
         ("POST", "/api/settings"): settings, ("GET", "/api/changes"): changes, ("POST", "/api/save"): save,
         ("POST", "/api/discard"): discard, ("POST", "/api/quit"): quit_, ("POST", "/api/open"): open_, ("GET", "/api/pilots"): pilots,
         ("GET", "/api/bindings"): bindings, ("GET", "/api/choices"): choices, ("POST", "/api/replace"): replace,

@@ -1,5 +1,6 @@
 # Changelog (versions shipped as zips; bump `VERSION` in webui.py AND `HV` in webui.html)
 
+- **v86** HUD skin: **Font swap** (`fontswap.py`, `/api/fontswap*`): pick a .ttf/.otf/.ufont, tick game FontFaces, it writes `<face>.ufont` (staged) and puts the game's own FontFace asset back where the mod had another one (SBK's, pointing to projects/sbk1). Reason: see FONTS.md "Why small fonts reverted".
 - **v85** Dark scrollbars everywhere (::-webkit-scrollbar: transparent track, no arrow buttons, rounded thumb; Firefox fallback scrollbar-color). Don't set scrollbar-width/scrollbar-color for Chrome: since Chrome 121 they override the ::-webkit rules and bring the arrows back.
 - **v84** Projector lookup keeps only files that parse as projector data; it picked `HelmetProjectorDataSource` (a class, no TaggedProjectors) first. If only such files exist, the message lists them.
 - **v83** Header: one line; tabs shrink and scroll sideways (mouse wheel works), project path shows in full (up to 45% width, cut at the start if longer, full path on hover). "Replace fonts with TT Supermolot" hidden (Faizal; backend kept).
