@@ -14,9 +14,13 @@ nav button{background:none;border:0;color:var(--dim);padding:14px 8px;flex:none;
 nav button.on{color:var(--text);border-color:var(--acc)}
 #savebar{display:flex;gap:8px;align-items:center;flex:none;padding:6px 0;margin-left:auto}#savebar button,#savebar .tag{white-space:nowrap}#dirty.on{background:#4a3a14;color:var(--warn)}
 .tag.warn{color:var(--warn)}
-nav{display:flex;white-space:nowrap;flex:1 1 0;min-width:120px;overflow-x:auto;scrollbar-width:thin}nav::-webkit-scrollbar{height:4px}nav::-webkit-scrollbar-thumb{background:var(--line)}header h1{white-space:nowrap;flex:none}
+nav{display:flex;white-space:nowrap;flex:1 1 0;min-width:120px;overflow-x:auto}nav::-webkit-scrollbar{height:4px}header h1{white-space:nowrap;flex:none}
 #where{flex:0 1 auto;min-width:80px;max-width:45vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left;color:var(--dim);font-size:12px;font-family:var(--mono)}
 main{flex:1;min-height:0;display:flex}
+::-webkit-scrollbar{width:10px;height:10px;background:transparent}::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-thumb{background:#3a404c;border-radius:6px;border:2px solid transparent;background-clip:padding-box}::-webkit-scrollbar-thumb:hover{background:#4d5462;background-clip:padding-box}
+::-webkit-scrollbar-button{display:none;width:0;height:0}
+@supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:#3a404c transparent}}
 section{display:none;flex:1;min-width:0}section.on{display:flex}
 .side{width:270px;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .side input{margin:10px;padding:7px 9px}
@@ -533,7 +537,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v84";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v85";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}
   if(ST.open){await loadPilots();const n=await refreshChanges();if(n&&!recoveryAsked){recoveryAsked=true;recoverDlg(n)}}else tab("setup");
