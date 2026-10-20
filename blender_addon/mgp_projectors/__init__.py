@@ -7,7 +7,7 @@ rotate and scale; a square shows where its ray hits the bike (where the number s
 bl_info = {
     "name": "MGP24 Projectors",
     "author": "MGP24 Master Editor",
-    "version": (1, 2, 0),
+    "version": (1, 3, 0),
     "blender": (3, 6, 0),
     "location": "3D View > Sidebar (N) > MGP24",
     "description": "Show/edit MotoGP 24 number projectors (ProjectorCustom*.uasset)",
@@ -43,14 +43,25 @@ def _is_ours(o):
 
 
 def _ray_hit(scene, depsgraph, origin, direction, max_dist=5.0):
-    """First bike surface hit (skipping our own preview objects)."""
+    """(location, normal, object name, distance) of the first hit: only the Target mesh if one is set,
+    else any mesh except our own preview objects."""
+    tgt = scene.mgp_proj.target
+    if tgt:
+        ev = tgt.evaluated_get(depsgraph)
+        inv = ev.matrix_world.inverted()
+        lo, ld = inv @ origin, (inv.to_3x3() @ direction).normalized()
+        ok, loc, nrm, _i = ev.ray_cast(lo, ld, distance=max_dist * 100)
+        if not ok:
+            return None
+        w = ev.matrix_world @ loc
+        return w, nrm, tgt.name, (w - origin).length
     o = origin.copy()
     for _ in range(16):
         ok, loc, nrm, _i, obj, _m = scene.ray_cast(depsgraph, o, direction, distance=max_dist)
         if not ok:
             return None
         if not _is_ours(obj) and not (obj and obj.original and _is_ours(obj.original)):
-            return loc, nrm
+            return loc, nrm, (obj.original.name if obj and obj.original else "?"), (loc - origin).length
         o = loc + direction * 1e-4
     return None
 
@@ -76,6 +87,9 @@ def update_previews(scene, depsgraph=None):
             d = (rot @ Vector((1 if s.ray_plus_x else -1, 0, 0))).normalized()
             hit = _ray_hit(scene, depsgraph, loc, d)
             size = s.box_cm * s.unit
+            info = "hits %s at %.0f cm" % (hit[2], hit[3] / s.unit) if hit else "hits nothing within 5 m"
+            if p.get("mgp_hit_info") != info:
+                p["mgp_hit_info"] = info
             if hit:
                 pos = hit[0] - d * 0.002                    # a hair in front of the surface
                 hit_obj.hide_viewport = False
@@ -146,6 +160,9 @@ class MGPProjSettings(bpy.types.PropertyGroup):
     ray_plus_x: BoolProperty(name="Ray along +X", default=False,
                              description="Projection direction is a guess (-X). Tick if the squares land on the wrong side of the bike",
                              update=lambda self, ctx: _flip_arrows(ctx.scene))
+    target: PointerProperty(name="Target mesh", type=bpy.types.Object, poll=lambda self, o: o.type == "MESH" and not _is_ours(o),
+                            description="Only this mesh catches the ray (the bodywork that carries the number, e.g. the nose). Empty = any mesh",
+                            update=lambda self, ctx: update_previews(ctx.scene))
     show_miss: BoolProperty(name="Show misses", default=True,
                             description="Also show the square when the ray hits nothing (unused projectors)",
                             update=lambda self, ctx: update_previews(ctx.scene))
@@ -266,6 +283,7 @@ class MGP_PT_panel(bpy.types.Panel):
         col.prop(s, "unit")
         col.prop(s, "flip_y")
         col.prop(s, "box_cm")
+        col.prop(s, "target")
         col.prop(s, "ray_plus_x")
         col.prop(s, "show_miss")
         if not s.parent:
@@ -277,6 +295,7 @@ class MGP_PT_panel(bpy.types.Panel):
             box.label(text=os.path.basename(coll["mgp_file"]), icon="FILE")
             o = context.active_object
             box.label(text="Tag: %s" % o["mgp_tag"])
+            box.label(text="Ray: %s" % o.get("mgp_hit_info", "-"))
             tex = o.get("mgp_texture") or "(no texture - probably unused)"
             box.label(text="Texture: %s" % tex.rsplit("/", 1)[-1])
             box.operator("mgp.proj_write", icon="FILE_TICK")

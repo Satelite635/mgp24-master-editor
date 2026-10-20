@@ -1,5 +1,6 @@
 # Changelog (versions shipped as zips; bump `VERSION` in webui.py AND `HV` in webui.html)
 
+- **v78** Blender add-on 1.3: "Target mesh" (ray only hits that object, evaluated mesh) + panel line "Ray: hits X at N cm". v77 squares landed inside the bike because the ray hit internal parts first.
 - **v77** Blender add-on 1.2: projectors are decal-style (sphere + ray arrow along local -X); a "number" square is placed where the ray hits the bike (scene ray-cast, live via depsgraph handler). "Ray along +X" toggle, "Show misses". Plane/Box option removed.
 - **v76** Blender add-on 1.1: "Show as" Plane (default; mesh square in local YZ, normal = arrow/local +X) or Box; size label "Size (cm at scale 1)"; tip when Parent is empty.
 - **v75** Blender add-on `mgp24_projectors_addon.zip` (in the tool zip): show/move/rotate/scale bike number projectors on the model, write back, copy to another bike's projector file. `uprops` reads IntPoint/IntVector structs (`WidgetsDrawSize` was unreadable).

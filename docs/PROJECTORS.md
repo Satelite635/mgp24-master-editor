@@ -9,6 +9,7 @@ Guesses (unverified): texture 47 is a placeholder replaced by the rider's number
 ## How placement works (v77 reading, being verified)
 - First reading (3D plane at the transform) put the number inside the bike - wrong. UV-space reading also ruled out: the number lives on UVChannel_2 (the livery UV), nose island centre ≈ (0.22, 0.54), not rotated; doesn't match 81/96.5/37°.
 - Current reading: decal-style projector. It sits inside the bike (x81 z96.5 cm) and projects along local -X, which for this quat is forward and 37° UP (UE +X of quat (0.317,0,-0.948,0) = (-0.8,0,-0.6)). Faizal: the number is on the front nose just under the windscreen. Ray direction may be +X instead -> add-on toggle.
+- v77 in Blender: square ended inside the bike - ray hit internal meshes first (reproduced headless). v78 adds Target mesh + hit readout.
 - Number size at scale 1 still a guess (100 cm).
 
 ## Blender add-on (`blender_addon/mgp_projectors`, shipped as `mgp24_projectors_addon.zip` inside the tool zip)
