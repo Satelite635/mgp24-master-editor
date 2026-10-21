@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v88"
+VERSION = "v89"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -456,11 +456,38 @@ def make_api(S):
             return [], "found only non-projector files: " + "; ".join(skipped) + where
         return found, "" if found else "no projector file found%s; checked %d asset(s): %s" % (where, len(checked), ", ".join(checked[:12]) + (" ..." if len(checked) > 12 else ""))
 
+    def _number_textures(P, key):
+        """[dict(table, asset, textures)]: the entry's rows in DT_Numbers_* (not the projector tables) and the
+        Texture2D packages each number asset points at."""
+        out = []
+        for r in P.table_names():
+            n = tname(r).lower()
+            if not n.startswith("dt_numbers_") or "projector" in n:
+                continue
+            try:
+                t = P.table(r)
+            except Exception:
+                continue
+            if key not in t.rows or not is_game(t.target(key)):
+                continue
+            pkg = t.target(key).partition(".")[0]
+            tex, rel = [], C.game_to_rel(pkg) + ".uasset"
+            try:
+                a = U.Asset(P.src.read(rel), b"")
+                if any(e["cls"] == "Texture2D" for e in a.exports):
+                    tex = [pkg]                                   # the row points straight at a texture
+                else:
+                    tex = sorted({a.object_ref(-(i + 1))[0] for i, im in enumerate(a.imports) if im["cls"] == "Texture2D"} - {""})
+            except Exception as e:
+                tex = ["(could not read %s: %s)" % (pkg.rsplit("/", 1)[-1], str(e)[:60])]
+            out.append(dict(table=tname(r), asset=pkg, textures=tex))
+        return out
+
     def proj_rider(q, b):
         P = S.need()
         key, group = q["key"][0], (q.get("group") or ["official"])[0]
         found, why = _rider_projectors(P, key, group)
-        out = dict(found=found, why=why)
+        out = dict(found=found, why=why, numbers=_number_textures(P, key))
         want = (q.get("pkg") or [""])[0] or (found[0]["pkg"] if found else "")
         if want:
             rel, _, projs = _proj_open(P, want)
