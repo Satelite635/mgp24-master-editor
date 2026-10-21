@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v89"
+VERSION = "v90"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
