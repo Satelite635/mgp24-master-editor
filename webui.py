@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v90"
+VERSION = "v91"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -162,9 +162,10 @@ def _pick_result(S, kind, path):
 def _pick_powershell(kind, start):
     """Windows fallback when Python has no tkinter: the system folder/file dialogs through PowerShell."""
     q = lambda s: "'" + s.replace("'", "''") + "'"
-    if kind in ("file", "asset", "game"):
+    if kind in ("file", "asset", "game", "font"):
         flt = ("Unreal assets (*.uasset)|*.uasset" if kind == "asset" else
                "Game or shortcut (*.exe;*.lnk;*.url)|*.exe;*.lnk;*.url|All files (*.*)|*.*" if kind == "game" else
+               "Fonts (*.ttf;*.otf;*.ufont)|*.ttf;*.otf;*.ufont|All files (*.*)|*.*" if kind == "font" else
                "Programs (*.exe)|*.exe|All files (*.*)|*.*")
         body = ("$d = New-Object System.Windows.Forms.OpenFileDialog; $d.DereferenceLinks = $false; $d.InitialDirectory = %s; "
                 "$d.Filter = '" + flt + "'; "
@@ -708,6 +709,9 @@ def make_api(S):
                 elif kind == "game":
                     path = filedialog.askopenfilename(initialdir=start, title="Choose the game .exe or a shortcut to it",
                                                       filetypes=[("Game or shortcut", "*.exe *.lnk *.url"), ("All files", "*.*")], parent=root)
+                elif kind == "font":
+                    path = filedialog.askopenfilename(initialdir=start, title="Choose the font file",
+                                                      filetypes=[("Fonts", "*.ttf *.otf *.ufont"), ("All files", "*.*")], parent=root)
                 elif kind == "file":
                     path = filedialog.askopenfilename(initialdir=start, title="Choose the file",
                                                       filetypes=[("Programs", "*.exe"), ("All files", "*.*")], parent=root)
