@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v87"
+VERSION = "v88"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -365,9 +365,35 @@ def make_api(S):
         """UE quat (x,y,z,w) -> (pitch, yaw, roll) in degrees, as Unreal/FModel show it."""
         return [round(v, 3) + 0.0 for v in PJ.quat_to_rotator(q)]
 
+    def _projector_tables(P, key, group):
+        """Rows of the DT_NumbersProjectors* binding tables for `key`; riders have none, so their team's rows
+        (Pilots.Teams_Key in the game database). Official/teams: the non-custom table first, custom: the custom one."""
+        tabs = [r for r in P.table_names() if "numbersprojector" in tname(r).lower()]
+        keys = [(key, "")]
+        try:
+            row = S.get_db().con.execute("select Teams_Key from Pilots where Key=?", (key,)).fetchone()
+            if row and row[0] and row[0] != key:
+                keys.append((row[0], " (team %s)" % row[0]))
+        except Exception:
+            pass
+        out = []
+        for k, note in keys:
+            for r in tabs:
+                try:
+                    t = P.table(r)
+                except Exception:
+                    continue
+                if k in t.rows and is_game(t.target(k)):
+                    out.append(dict(pkg=t.target(k).partition(".")[0], how="%s row %s%s" % (tname(r), k, note)))
+            if out:
+                break
+        want_custom = group == "custom"
+        out.sort(key=lambda f: ("custom" in f["how"].split(" ", 1)[0].lower()) != want_custom)
+        return out
+
     def _rider_projectors(P, key, group):
-        """Projector files of a rider/team entry: [dict(pkg, how)]. First the projector packages the bike's
-        variant set references; if none, Projector* files in the bike's customization_data folder with the same variant tag."""
+        """Projector files of a rider/team entry: [dict(pkg, how)]. First the DT_NumbersProjectors* tables (by key,
+        else by the rider's team); then projector packages the entry's assets reference; then the chassis/variant naming guess."""
         rel = bike_rel(P, group or "official")
         t = P.table(rel) if rel else None
         obj = t.target(key) if t and key in t.rows and is_game(t.target(key)) else ""
@@ -381,8 +407,8 @@ def make_api(S):
         for _r, _c, tgt in P.pilot_bindings(key, group):        # every customization_data the entry points at
             if is_game(tgt):
                 pkgs.append(tgt.partition(".")[0])
-        found, checked = [], []
-        for cur in dict.fromkeys(pkgs):
+        found, checked = _projector_tables(P, key, group), []
+        for cur in ([] if found else dict.fromkeys(pkgs)):
             r = C.game_to_rel(cur) + ".uasset"
             if not P.src.exists(r):
                 continue
@@ -423,7 +449,7 @@ def make_api(S):
             want_custom = group == "custom"
             guess.sort(key=lambda f: ("custom" in f["pkg"].rsplit("/", 1)[-1].lower()) != want_custom)
             found = real(guess)
-        if not pkgs:
+        if not pkgs and not found:
             return [], "this entry has no bindings"
         where = " (bike: %s)" % pkg if pkg else " (no bike row)"
         if not found and skipped:
