@@ -12,11 +12,12 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v85"
+VERSION = "v90"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
 import projfile as PJ
+import fontswap as FS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -364,9 +365,35 @@ def make_api(S):
         """UE quat (x,y,z,w) -> (pitch, yaw, roll) in degrees, as Unreal/FModel show it."""
         return [round(v, 3) + 0.0 for v in PJ.quat_to_rotator(q)]
 
+    def _projector_tables(P, key, group):
+        """Rows of the DT_NumbersProjectors* binding tables for `key`; riders have none, so their team's rows
+        (Pilots.Teams_Key in the game database). Official/teams: the non-custom table first, custom: the custom one."""
+        tabs = [r for r in P.table_names() if "numbersprojector" in tname(r).lower()]
+        keys = [(key, "")]
+        try:
+            row = S.get_db().con.execute("select Teams_Key from Pilots where Key=?", (key,)).fetchone()
+            if row and row[0] and row[0] != key:
+                keys.append((row[0], " (team %s)" % row[0]))
+        except Exception:
+            pass
+        out = []
+        for k, note in keys:
+            for r in tabs:
+                try:
+                    t = P.table(r)
+                except Exception:
+                    continue
+                if k in t.rows and is_game(t.target(k)):
+                    out.append(dict(pkg=t.target(k).partition(".")[0], how="%s row %s%s" % (tname(r), k, note)))
+            if out:
+                break
+        want_custom = group == "custom"
+        out.sort(key=lambda f: ("custom" in f["how"].split(" ", 1)[0].lower()) != want_custom)
+        return out
+
     def _rider_projectors(P, key, group):
-        """Projector files of a rider/team entry: [dict(pkg, how)]. First the projector packages the bike's
-        variant set references; if none, Projector* files in the bike's customization_data folder with the same variant tag."""
+        """Projector files of a rider/team entry: [dict(pkg, how)]. First the DT_NumbersProjectors* tables (by key,
+        else by the rider's team); then projector packages the entry's assets reference; then the chassis/variant naming guess."""
         rel = bike_rel(P, group or "official")
         t = P.table(rel) if rel else None
         obj = t.target(key) if t and key in t.rows and is_game(t.target(key)) else ""
@@ -380,8 +407,8 @@ def make_api(S):
         for _r, _c, tgt in P.pilot_bindings(key, group):        # every customization_data the entry points at
             if is_game(tgt):
                 pkgs.append(tgt.partition(".")[0])
-        found, checked = [], []
-        for cur in dict.fromkeys(pkgs):
+        found, checked = _projector_tables(P, key, group), []
+        for cur in ([] if found else dict.fromkeys(pkgs)):
             r = C.game_to_rel(cur) + ".uasset"
             if not P.src.exists(r):
                 continue
@@ -408,25 +435,59 @@ def make_api(S):
                     skipped.append("%s (%s)" % (f["pkg"].rsplit("/", 1)[-1], str(e)[:60]))
             return out
         found = real(found)
-        if not found and "/customization_data/" in pkg and "_" in pkg.rsplit("/", 1)[-1]:
-            folder, tag = pkg.rsplit("/", 1)[0], pkg.rsplit("_", 1)[1]
+        m = re.search(r"^(.*/chassis\d+)/", pkg) if pkg else None
+        v = re.search(r"_(\d+)$", pkg.rsplit("/", 1)[-1]) if pkg else None
+        if not found and m and v:
+            # naming the game uses: <chassis>/customization_data/projectorCCC_VVV (official), ProjectorCustomCCC_VVV (custom)
+            folder, var = m.group(1) + "/customization_data", int(v.group(1))
             guess = []
             for r in P.src.find(C.game_to_rel(folder), ".uasset"):
                 b = r.rsplit("/", 1)[-1][:-7]
-                if "projector" in b.lower() and b.endswith("_" + tag):
-                    guess.append(dict(pkg=folder + "/" + b, how="guessed: same folder and variant %s as %s" % (tag, pkg.rsplit("/", 1)[-1])))
+                mv = re.search(r"_(\d+)$", b)
+                if "projector" in b.lower() and mv and int(mv.group(1)) == var:
+                    guess.append(dict(pkg=folder + "/" + b, how="guessed: same chassis and variant %s as %s" % (v.group(1), pkg.rsplit("/", 1)[-1])))
+            want_custom = group == "custom"
+            guess.sort(key=lambda f: ("custom" in f["pkg"].rsplit("/", 1)[-1].lower()) != want_custom)
             found = real(guess)
-        if not pkgs:
+        if not pkgs and not found:
             return [], "this entry has no bindings"
+        where = " (bike: %s)" % pkg if pkg else " (no bike row)"
         if not found and skipped:
-            return [], "found only non-projector files: " + "; ".join(skipped)
-        return found, "" if found else "no projector file found; checked %d asset(s): %s" % (len(checked), ", ".join(checked[:12]) + (" ..." if len(checked) > 12 else ""))
+            return [], "found only non-projector files: " + "; ".join(skipped) + where
+        return found, "" if found else "no projector file found%s; checked %d asset(s): %s" % (where, len(checked), ", ".join(checked[:12]) + (" ..." if len(checked) > 12 else ""))
+
+    def _number_textures(P, key):
+        """[dict(table, asset, textures)]: the entry's rows in DT_Numbers_* (not the projector tables) and the
+        Texture2D packages each number asset points at."""
+        out = []
+        for r in P.table_names():
+            n = tname(r).lower()
+            if not n.startswith("dt_numbers_") or "projector" in n:
+                continue
+            try:
+                t = P.table(r)
+            except Exception:
+                continue
+            if key not in t.rows or not is_game(t.target(key)):
+                continue
+            pkg = t.target(key).partition(".")[0]
+            tex, rel = [], C.game_to_rel(pkg) + ".uasset"
+            try:
+                a = U.Asset(P.src.read(rel), b"")
+                if any(e["cls"] == "Texture2D" for e in a.exports):
+                    tex = [pkg]                                   # the row points straight at a texture
+                else:
+                    tex = sorted({a.object_ref(-(i + 1))[0] for i, im in enumerate(a.imports) if im["cls"] == "Texture2D"} - {""})
+            except Exception as e:
+                tex = ["(could not read %s: %s)" % (pkg.rsplit("/", 1)[-1], str(e)[:60])]
+            out.append(dict(table=tname(r), asset=pkg, textures=tex))
+        return out
 
     def proj_rider(q, b):
         P = S.need()
         key, group = q["key"][0], (q.get("group") or ["official"])[0]
         found, why = _rider_projectors(P, key, group)
-        out = dict(found=found, why=why)
+        out = dict(found=found, why=why, numbers=_number_textures(P, key))
         want = (q.get("pkg") or [""])[0] or (found[0]["pkg"] if found else "")
         if want:
             rel, _, projs = _proj_open(P, want)
@@ -1231,6 +1292,94 @@ def make_api(S):
 
     FONT_DIR = "Content/assets/ui/Fonts"
 
+    def _fs_faces(P):
+        """The game's FontFace assets (base paks) + what the mod folder does to each."""
+        if not P.paks:
+            raise C.MgpError("the game's paks are needed to list its fonts (Setup tab)")
+        rels = sorted(r for r in P.paks.find(FONT_DIR, ".uasset"))
+        faces, users = [], {}
+        for r in P.src.find(FONT_DIR, ".uasset"):                   # Font assets -> faces they use (as the game will load them)
+            try:
+                a = U.Asset(P.src.read(r), b"")
+            except Exception:
+                continue
+            if any(e["cls"] == "Font" for e in a.exports):
+                for im in a.imports:
+                    if im["cls"] == "FontFace":
+                        users.setdefault(im["name"], []).append(r.rsplit("/", 1)[-1][:-7])
+        for r in rels:
+            base = P.paks.read_base(r)
+            if base is None:
+                continue
+            try:
+                a = U.Asset(base, b"")
+            except Exception:
+                continue
+            if not any(e["cls"] == "FontFace" for e in a.exports):
+                continue
+            name = r.rsplit("/", 1)[-1][:-7]
+            uf = r[:-7] + ".ufont"
+            f = dict(name=name, used_by=sorted(users.get(name, [])), game_ufont=P.paks.read_base(uf) is not None,
+                     mod_ufont="", mod_face="")
+            if os.path.exists(P.src.loose(uf)) or (P.src.base and os.path.exists(P.src._base(uf))):
+                try:
+                    f["mod_ufont"] = FS.font_info(P.src.read(uf))["full"]
+                except ValueError as e:
+                    f["mod_ufont"] = "(%s)" % e
+            loose = [x for x in (P.src.loose(r), P.src._base(r) if P.src.base else None) if x and os.path.exists(x)]
+            if loose:
+                mine = open(loose[0], "rb").read()
+                ux = loose[0][:-7] + ".uexp"
+                mine_x = open(ux, "rb").read() if os.path.exists(ux) else b""
+                if mine != base or mine_x != (P.paks.read_base(r[:-7] + ".uexp") or b""):
+                    f["mod_face"] = "another game's FontFace (points to projects/sbk1)" if b"sbk1" in mine + mine_x else "modded FontFace"
+            faces.append(f)
+        return faces
+
+    def fontswap_list(q, b):
+        return dict(faces=_fs_faces(S.need()))
+
+    def fontswap_check(q, b):
+        path = (b.get("path") or "").strip().strip('"')
+        if not path or not os.path.isfile(path):
+            raise C.MgpError("font file not found: %r" % path)
+        try:
+            return FS.font_info(open(path, "rb").read())
+        except ValueError as e:
+            raise C.MgpError("%s: %s" % (os.path.basename(path), e))
+
+    def fontswap_apply(q, b):
+        """Write the font file as <face>.ufont for each chosen face; where the mod folder has a different
+        FontFace asset of that name (e.g. SBK's), put the game's own back so it reads that .ufont. Staged."""
+        P = S.need()
+        path = (b.get("path") or "").strip().strip('"')
+        data = open(path, "rb").read() if path and os.path.isfile(path) else None
+        if data is None:
+            raise C.MgpError("font file not found: %r" % path)
+        info = FS.font_info(data)
+        known = {f["name"]: f for f in _fs_faces(P)}
+        done, restored = [], []
+        for name in b.get("faces") or []:
+            if name not in known:
+                raise C.MgpError("not one of the game's fonts: %s" % name)
+            stem = FONT_DIR + "/" + name
+            out = [(stem + ".ufont", data)]
+            if known[name]["mod_face"]:
+                for ext in (".uasset", ".uexp"):
+                    orig = P.paks.read_base(stem + ext)
+                    if orig is None:
+                        raise C.MgpError("the game has no original %s%s to put back" % (name, ext))
+                    out.append((stem + ext, orig))
+                restored.append(name)
+            for rel, blob in out:
+                full = P.src.loose(rel)
+                os.makedirs(os.path.dirname(full), exist_ok=True)
+                P.backup(full)
+                with open(full, "wb") as f:
+                    f.write(blob)
+            done.append(name)
+        return dict(font=info["full"], done=done, restored=restored)
+
     def fonts_list(q, b):
         P = S.need()
         found = P.src.find(FONT_DIR, ".uasset")
@@ -1773,7 +1922,7 @@ def make_api(S):
         return dict(value=val)
 
     return {
-        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("GET", "/api/proj/rider"): proj_rider, ("POST", "/api/proj/set"): proj_set, ("POST", "/api/proj/copy"): proj_copy, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
+        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("GET", "/api/fontswap"): fontswap_list, ("POST", "/api/fontswap/check"): fontswap_check, ("POST", "/api/fontswap/apply"): fontswap_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("GET", "/api/proj/rider"): proj_rider, ("POST", "/api/proj/set"): proj_set, ("POST", "/api/proj/copy"): proj_copy, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
         ("POST", "/api/settings"): settings, ("GET", "/api/changes"): changes, ("POST", "/api/save"): save,
         ("POST", "/api/discard"): discard, ("POST", "/api/quit"): quit_, ("POST", "/api/open"): open_, ("GET", "/api/pilots"): pilots,
         ("GET", "/api/bindings"): bindings, ("GET", "/api/choices"): choices, ("POST", "/api/replace"): replace,

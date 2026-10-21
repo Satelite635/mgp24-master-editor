@@ -19,3 +19,10 @@ Default-unticked in the list: Digital-7, Accelerator, Vehicle_*, American_Purpos
 ## Ideas
 - "Fonts used by page X" report (resolve Font imports of widgets in HUDLeaderboardWidgetBP etc.).
 - Rebuild SBK-style Font assets from GP24's own Font as donor (rename export/package names, repoint face) if a Font must exist at an SBK path.
+
+## Why small fonts reverted with the penalty graft (Oct 21) and the fix (v86 Font swap)
+- Faizal's "working" HUD pak vs "fonts bugged" pak: all 1707 files identical except RaceHud_BP (= the graft: 2 widgets retyped to GP24's WB_RacePenaltiesWidgetContainer / PlayerAlertsHUDWidget_BP, PenaltyTime + long-lap hidden, swap). No font refs in either RaceHud_BP.
+- In game with the graft: everything except the big text went back to GP24's original font.
+- The big text = MotoGPText-Display. Its .ufont IS in the pak (raw OTF of "TT Supermolot Neue Bold"); its FontFace asset comes from the game. FontFace assets read <Fonts>/<name>.ufont, so an overridden .ufont replaces the font reliably.
+- The small fonts (MotoGPText-Regular/Bold/Italic, Geogrotesque…) had NO .ufont in the pak, only SBK FontFace assets whose SourceFilename points to ../../../projects/sbk1/... (doesn't exist in GP24). Their "replaced" look depended on how the game handles that broken path; loading GP24's widgets changed it (exact mechanism unknown).
+- Fix: real .ufont files for each FontFace + the game's own FontFace assets (Font swap does both). Not yet verified in game.

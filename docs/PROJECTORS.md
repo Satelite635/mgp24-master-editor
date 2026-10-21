@@ -17,6 +17,12 @@ Guesses (unverified): texture 47 is a placeholder replaced by the rider's number
 Browse → a `Projector*` asset → "Copy projectors from…". Copies Translation/Rotation/Scale3D/Priority per tag; textures/layers untouched. Verified offline only (003→006 SidePlateRight z 98→96.5, staged).
 **Status:** placement editing paused by Faizal (Oct 20) after the in-game test showed 104_006 SidePlateRight edits change nothing. Next if resumed: Browse "Used by" on that file.
 
+## How the game links projectors (Oct 21, from Faizal's screenshots)
+Binding tables `DT_NumbersProjectors_BikeTeams` (official, e.g. projector102_007) and `DT_NumbersProjectorsCustom_BikeTeams` (custom, e.g. ProjectorCustom102_007), keyed by team (MotoGP_Honda-Factory …). Rider bike assets (bike103_001) do not reference projectors; Yamaha official riders use projector103_004 (variant differs from the bike's).
+
+## Number images
+`DT_Numbers_BikeOfficial` (per rider) → `vehicles/bikes/catNNN/ProjectorNumbers/customization_data/<Rider>_Number` → texture `ProjectorNumbers/textures/<Rider>_Number` (Texture2D, DXT5, .ubulk). The projector file only places it; its `47` texture is (very likely) a placeholder.
+
 ## Rider page (v81)
 Section "number projectors" above riding style. Lookup: `_rider_projectors` in webui.py (see CHANGELOG v81). Unknown whether the real bike assets reference their projector (only tested with a fake bike asset) - if lookups say "guessed" or "no projector file", ask Faizal which file a rider uses.
 
