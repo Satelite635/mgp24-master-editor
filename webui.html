@@ -122,7 +122,7 @@ dialog input[type=text]{width:100%;padding:8px}
       <div id="fn_out"></div>
       <h3 style="margin:18px 0 6px">Font swap</h3>
       <div class="help">Replaces a game font with a real font file (.ttf / .otf / .ufont): it is written as &lt;font&gt;.ufont, which the game's own font asset reads (how the big MotoGPText-Display text already works). Another game's font asset of the same name in your mod is replaced by the game's own.</div>
-      <div class="pathrow" style="margin-top:8px"><input type="text" id="fs_path" placeholder="font file, e.g. C:\fonts\TTSupermolotNeue-Regular.ttf"><button class="b" data-pick="fs_path" data-kind="file">Browse</button><button class="b" id="fs_check">Check</button><button class="b" id="fs_list">List game fonts</button></div>
+      <div class="pathrow" style="margin-top:8px"><input type="text" id="fs_path" placeholder="font file, e.g. C:\fonts\TTSupermolotNeue-Regular.ttf"><button class="b" data-pick="fs_path" data-kind="font">Browse</button><button class="b" id="fs_check">Check</button><button class="b" id="fs_list">List game fonts</button></div>
       <div id="fs_info" class="help"></div><div id="fs_out"></div>
       <div id="hu_out"></div>
     </div>
@@ -552,7 +552,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v90";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v91";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}
   if(ST.open){await loadPilots();const n=await refreshChanges();if(n&&!recoveryAsked){recoveryAsked=true;recoverDlg(n)}}else tab("setup");

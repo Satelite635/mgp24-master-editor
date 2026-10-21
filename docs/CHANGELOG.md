@@ -1,5 +1,6 @@
 # Changelog (versions shipped as zips; bump `VERSION` in webui.py AND `HV` in webui.html)
 
+- **v91** Font swap Browse: the file dialog filters fonts (.ttf/.otf/.ufont, kind "font") instead of programs (.exe).
 - **v90** Projector table column "Number texture": shows the rider's number texture name for projectors that have a texture (the file's own `47` in the tooltip); "-" = no texture in the file.
 - **v89** Projector section shows the entry's number: `DT_Numbers_*` row → `ProjectorNumbers/customization_data/<Rider>_Number` → Texture2D package(s) it imports (`_number_textures`). Column renamed "Texture in file" (the 47 placeholder).
 - **v88** Projector lookup uses the real link first: binding tables `DT_NumbersProjectors_BikeTeams` / `DT_NumbersProjectorsCustom_BikeTeams` are keyed by TEAM; riders resolve via `Pilots.Teams_Key` in the game DB (`_projector_tables`). Official/teams list the non-custom file first, custom the custom one. Reference scan and chassis/variant guess remain as fallbacks. Note: a team's projector file is shared by all its riders.
