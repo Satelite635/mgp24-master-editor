@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v86"
+VERSION = "v87"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -409,19 +409,26 @@ def make_api(S):
                     skipped.append("%s (%s)" % (f["pkg"].rsplit("/", 1)[-1], str(e)[:60]))
             return out
         found = real(found)
-        if not found and "/customization_data/" in pkg and "_" in pkg.rsplit("/", 1)[-1]:
-            folder, tag = pkg.rsplit("/", 1)[0], pkg.rsplit("_", 1)[1]
+        m = re.search(r"^(.*/chassis\d+)/", pkg) if pkg else None
+        v = re.search(r"_(\d+)$", pkg.rsplit("/", 1)[-1]) if pkg else None
+        if not found and m and v:
+            # naming the game uses: <chassis>/customization_data/projectorCCC_VVV (official), ProjectorCustomCCC_VVV (custom)
+            folder, var = m.group(1) + "/customization_data", int(v.group(1))
             guess = []
             for r in P.src.find(C.game_to_rel(folder), ".uasset"):
                 b = r.rsplit("/", 1)[-1][:-7]
-                if "projector" in b.lower() and b.endswith("_" + tag):
-                    guess.append(dict(pkg=folder + "/" + b, how="guessed: same folder and variant %s as %s" % (tag, pkg.rsplit("/", 1)[-1])))
+                mv = re.search(r"_(\d+)$", b)
+                if "projector" in b.lower() and mv and int(mv.group(1)) == var:
+                    guess.append(dict(pkg=folder + "/" + b, how="guessed: same chassis and variant %s as %s" % (v.group(1), pkg.rsplit("/", 1)[-1])))
+            want_custom = group == "custom"
+            guess.sort(key=lambda f: ("custom" in f["pkg"].rsplit("/", 1)[-1].lower()) != want_custom)
             found = real(guess)
         if not pkgs:
             return [], "this entry has no bindings"
+        where = " (bike: %s)" % pkg if pkg else " (no bike row)"
         if not found and skipped:
-            return [], "found only non-projector files: " + "; ".join(skipped)
-        return found, "" if found else "no projector file found; checked %d asset(s): %s" % (len(checked), ", ".join(checked[:12]) + (" ..." if len(checked) > 12 else ""))
+            return [], "found only non-projector files: " + "; ".join(skipped) + where
+        return found, "" if found else "no projector file found%s; checked %d asset(s): %s" % (where, len(checked), ", ".join(checked[:12]) + (" ..." if len(checked) > 12 else ""))
 
     def proj_rider(q, b):
         P = S.need()
