@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v100"
+VERSION = "v101"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -427,10 +427,11 @@ def make_api(S):
     def _proj_open(P, pkg):
         rel = C.game_to_rel(C.normalize_target(pkg)) + ".uasset"
         ue = rel[:-7] + ".uexp"
-        if not P.src.exists(rel) or not P.src.exists(ue):
+        zen = P.game != "gp24"                                  # MotoGP 25: one zen .uasset, no .uexp
+        if not P.src.exists(rel) or not (zen or P.src.exists(ue)):
             raise C.MgpError("projector file not found: %s" % pkg)
         try:
-            a, projs = PJ.parse(P.src.read(rel), P.src.read(ue))
+            a, projs = PJ.parse(P.src.read(rel), None if zen else P.src.read(ue))
         except ValueError as e:
             raise C.MgpError("%s: %s" % (rel.rsplit("/", 1)[-1], e))
         return rel, a, projs
@@ -488,7 +489,12 @@ def make_api(S):
                 continue
             checked.append(cur.rsplit("/", 1)[-1])
             try:
-                names = C.UAsset(P.src.read(r)).texts()
+                if P.game != "gp24":
+                    import mgp_zen
+                    z = mgp_zen.ZenPackage(P.src.read(r))
+                    names = z.names + z.imported_package_names()
+                else:
+                    names = C.UAsset(P.src.read(r)).texts()
             except Exception:
                 continue
             for n in names:
@@ -501,9 +507,8 @@ def make_api(S):
         def real(fs):                                           # keep only real projector data (TaggedProjectors)
             out = []
             for f in fs:
-                rel = C.game_to_rel(f["pkg"])
                 try:
-                    PJ.parse(P.src.read(rel + ".uasset"), P.src.read(rel + ".uexp"))
+                    _proj_open(P, f["pkg"])
                     out.append(f)
                 except Exception as e:
                     skipped.append("%s (%s)" % (f["pkg"].rsplit("/", 1)[-1], str(e)[:60]))
@@ -547,6 +552,11 @@ def make_api(S):
             pkg = t.target(key).partition(".")[0]
             tex, rel = [], C.game_to_rel(pkg) + ".uasset"
             try:
+                if P.game != "gp24":                              # zen: the packages it imports (guess: its textures)
+                    import mgp_zen
+                    tex = [n for n in mgp_zen.ZenPackage(P.src.read(rel)).imported_package_names() if "/DataSources/" not in n] or [pkg]
+                    out.append(dict(table=tname(r), asset=pkg, textures=tex))
+                    continue
                 a = U.Asset(P.src.read(rel), b"")
                 if any(e["cls"] == "Texture2D" for e in a.exports):
                     tex = [pkg]                                   # the row points straight at a texture
@@ -588,11 +598,17 @@ def make_api(S):
         quat = p["quat"] if all(abs(x - y) < 5e-4 for x, y in zip(rot, old)) else PJ.rotator_to_quat(*rot)  # untouched: keep exact
         PJ.patch(a, projs, {p["tag"]: dict(loc=loc, quat=quat, scale=sc, priority=pri)})
         _proj_write(P, rel, a)
-        return dict(projectors=_proj_rows(PJ.parse(a.ua.to_bytes(), bytes(a.uexp))[1]))
+        return dict(projectors=_proj_rows(_proj_reparse(a)[1]))
+
+    def _proj_reparse(a):
+        if getattr(a, "zen", False):
+            return PJ.parse(a.to_bytes(), None)
+        return PJ.parse(a.ua.to_bytes(), bytes(a.uexp))
 
     def _proj_write(P, rel, a):
-        PJ.parse(a.ua.to_bytes(), bytes(a.uexp))              # still parses after the patch
-        for path, data in ((rel, a.ua.to_bytes()), (rel[:-7] + ".uexp", bytes(a.uexp))):
+        _proj_reparse(a)                                      # still parses after the patch
+        files = [(rel, a.to_bytes())] if getattr(a, "zen", False) else [(rel, a.ua.to_bytes()), (rel[:-7] + ".uexp", bytes(a.uexp))]
+        for path, data in files:
             full = P.src.loose(path)
             os.makedirs(os.path.dirname(full), exist_ok=True)
             P.backup(full)
@@ -631,7 +647,7 @@ def make_api(S):
         if done:
             _proj_write(P, rel, a)
         missing = sorted(want - set(done))
-        return dict(done=done, missing=missing, src=src, projectors=_proj_rows(PJ.parse(a.ua.to_bytes(), bytes(a.uexp))[1]))
+        return dict(done=done, missing=missing, src=src, projectors=_proj_rows(_proj_reparse(a)[1]))
 
     def refs(q, b):
         """Background job: which assets (mod folder + paks) mention a package name in their name table."""

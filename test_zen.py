@@ -1,10 +1,11 @@
-"""Offline test of the MotoGP 25 zen/IoStore code: python test_zen.py <folder with GP25 DT_Bike*.uasset> [retoc mod .utoc]
+"""Offline test of the MotoGP 25 zen/IoStore code: python test_zen.py <folder with GP25 DT_Bike*.uasset / projector*.uasset> [retoc mod .utoc]
 Bike tables must parse, rebuild byte-identical, repoint and re-parse; with a retoc-made .utoc/.ucas, rewriting its
 packages with mgp_iostore.write_container must give the identical .utoc and .ucas."""
 import glob, os, sys, tempfile
 
 import mgp_iostore as I
 import mgp_zen as Z
+import projfile as PJ
 
 d = sys.argv[1]
 for f in sorted(glob.glob(os.path.join(d, "DT_Bike*.uasset"))):
@@ -15,6 +16,15 @@ for f in sorted(glob.glob(os.path.join(d, "DT_Bike*.uasset"))):
     t.set_target(k, "/Game/test/new_pkg.new_pkg")
     assert Z.ZenBindingTable(t.to_bytes()).target(k) == "/Game/test/new_pkg.new_pkg"
     print("ok", os.path.basename(f), len(t.rows), "rows")
+for f in sorted(glob.glob(os.path.join(d, "[Pp]rojector*.uasset"))):   # projector files: parse, no-op patch identical, edit re-parses
+    data = open(f, "rb").read()
+    a, ps = PJ.parse(data, None)
+    PJ.patch(a, ps, {p["tag"]: p for p in ps})
+    assert a.to_bytes() == data, f
+    v = dict(ps[0], loc=[1.0, 2.0, 3.0])
+    PJ.patch(a, ps, {ps[0]["tag"]: v})
+    assert PJ.parse(a.to_bytes(), None)[1][0]["loc"] == [1.0, 2.0, 3.0] and len(a.to_bytes()) == len(data)
+    print("ok", os.path.basename(f), [p["tag"] for p in ps])
 if len(sys.argv) > 2:
     src = I.Toc(sys.argv[2])
     pk = []

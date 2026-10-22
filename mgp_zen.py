@@ -82,9 +82,8 @@ class ZenPackage:
         io = struct.unpack_from("<i", d, 28)[0]
         self.imports = list(struct.unpack_from("<%dQ" % ((eo - io) // 8), d, io))
 
-    def imported_package_ids(self):
-        """FPackageIds of the packages this one imports (its ImportedPackageNames name batch)."""
-        from mgp_iostore import package_id
+    def imported_package_names(self):
+        """Names of the packages this one imports (its ImportedPackageNames name batch), in file order."""
         at, end = struct.unpack_from("<i", self.data, 48)[0], self.header_size
         if end - at < 4 or not struct.unpack_from("<I", self.data, at)[0]:
             return []
@@ -99,8 +98,22 @@ class ZenPackage:
             else:
                 k = ln; t = self.data[p:p + k].decode("latin-1")
             p += k
-            out.append(package_id(t))
-        return sorted(out)
+            out.append(t)
+        return out
+
+    def imported_package_ids(self):
+        """FPackageIds of the packages this one imports (its ImportedPackageNames name batch)."""
+        from mgp_iostore import package_id
+        return sorted(package_id(t) for t in self.imported_package_names())
+
+    def import_package(self, package_index):
+        """Package name a negative FPackageIndex imports from ('' if it is not a package import)."""
+        v = self.import_at(package_index)
+        if v is None or v >> 62 != 2:
+            return ""
+        names = self.imported_package_names()
+        i = (v >> 32) & 0x3FFFFFFF
+        return names[i] if i < len(names) else ""
 
     def import_at(self, package_index):
         """FPackageObjectIndex of a negative FPackageIndex (import), else None."""

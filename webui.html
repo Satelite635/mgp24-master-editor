@@ -554,7 +554,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v100";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v101";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const g=ST.game_id||"gp24",keep=["riders","check","browse","loc","db","setup"];$("#s_gameid").value=g;$$("nav button").forEach(b=>b.style.display=(g==="gp24"||keep.includes(b.dataset.t))?"":"none");if(g!=="gp24"&&!keep.includes(($$("nav button.on")[0]||{}).dataset?.t))tab(ST.open?"riders":"setup")}
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}
@@ -754,7 +754,7 @@ function projHtml(){
   const n3=(cls,v,w)=>v.map((x,j)=>`<input type="text" class="${cls}" data-j="${j}" value="${esc(String(x))}" style="width:${w}px">`).join(" ");
   h+=`<table><tr><th style="width:150px">Projector</th><th>Position x, y, z (cm)</th><th>Rotation pitch, yaw, roll (°)</th><th>Scale x, y, z</th><th>Prio</th><th>Number texture</th><th></th></tr>`;
   projR.projectors.forEach((p,i)=>{h+=`<tr data-pi="${i}"><td class="mono">${esc(p.tag)}</td><td style="white-space:nowrap">${n3("pr_l",p.loc,64)}</td><td style="white-space:nowrap">${n3("pr_r",p.rot,58)}</td><td style="white-space:nowrap">${n3("pr_s",p.scale,52)}</td>
-    <td><input type="text" class="pr_p" value="${esc(String(p.priority??""))}" style="width:36px"></td><td class="mono" title="${esc(p.texture?"in the projector file: "+p.texture+" (placeholder; the rider's number texture is drawn instead - likely, not verified)":"no texture in the projector file: this projector draws nothing")}">${esc(p.texture?(numTex||p.texture):"-")}</td><td><button class="b" data-pa="${i}">Apply</button></td></tr>`});
+    <td><input type="text" class="pr_p" value="${esc(String(p.priority??""))}" style="width:36px"></td><td class="mono" title="${esc(p.texture?"in the projector file: "+p.texture+" (placeholder; the rider's number texture is drawn instead - likely, not verified)":"no texture in the projector file: this projector draws nothing")}">${esc(p.texture?(p.texture==="47"?(numTex||p.texture):p.texture):"-")}</td><td><button class="b" data-pa="${i}">Apply</button></td></tr>`});
   return h+`</table><div class="bar"><input type="text" id="pr_src" list="pr_dl" placeholder="rider or projector file to copy from" autocomplete="off" style="width:360px"><datalist id="pr_dl"></datalist> <button class="b" id="pr_copy">Copy all projectors</button>
     <span class="help">Copies position, rotation, scale, priority (matched by name). Not verified in game yet.</span></div>`;
 }
