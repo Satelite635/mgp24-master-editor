@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v95"
+VERSION = "v96"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -266,19 +266,21 @@ def make_api(S):
         if not os.path.isdir(out):
             raise C.MgpError("output folder does not exist: %r" % out)
         files = PW.collect(P.real_root, P.project)
-        held = []
-        if P.game != "gp24":                         # zen assets only load from .utoc/.ucas (not written yet)
-            held = [n for n, _ in files if n.lower().endswith((".uasset", ".ubulk", ".umap"))]
-            files = [f for f in files if f[0] not in held]
-        if not files:
-            raise C.MgpError("the mod folder has no Content folder with files in it" if not held else
-                             "nothing to pack: MotoGP 25 assets (%d) need a .utoc/.ucas, which the tool cannot write yet" % len(held))
+        zen = []
+        if P.game != "gp24":                         # zen assets load only from a .utoc/.ucas next to the .pak
+            zen = [f for f in files if f[0].lower().endswith((".uasset", ".ubulk", ".umap", ".uptnl"))]
+            files = [f for f in files if f not in zen]
+            other = [n for n, _ in zen if not n.lower().endswith(".uasset")]
+            if other:
+                raise C.MgpError("MotoGP 25: only .uasset files can be packed so far, not: " + ", ".join(o.rsplit("/", 1)[-1] for o in other[:5]))
+        if not files and not zen:
+            raise C.MgpError("the mod folder has no Content folder with files in it")
         dest = os.path.join(out, name + ".pak")
         if os.path.exists(dest) and not b.get("overwrite"):
             return dict(exists=True, path=dest)
         def work(log):
-            for n in held:
-                log("NOT packed (MotoGP 25 assets need .utoc/.ucas, not supported yet): " + n)
+            if zen:
+                return _pack_zen(P, dest, files, zen, log)
             if not b.get("force") and P.paks and P.game == "gp24":
                 log("Crash check before packing...")
                 block, warn, n = _crash_scan(P, log)
@@ -297,7 +299,34 @@ def make_api(S):
                 raise
             return dict(path=dest, files=n, bytes=size, summary="%s (%d files, %.1f MB)" % (dest, n, size / 1048576))
         _job_start("Packing", work)
-        return dict(started=True, path=dest, files=len(files))
+        return dict(started=True, path=dest, files=len(files) + len(zen))
+
+    def _pack_zen(P, dest, files, zen, log):
+        """MotoGP 25: zen .uassets into <name>.utoc/.ucas (uncompressed, like retoc), other files into <name>.pak
+        (an empty one when there are none: the game mounts the .utoc through the .pak)."""
+        import mgp_iostore as IO, mgp_zen as Z
+        pk = []
+        for name, path in zen:
+            data = open(path, "rb").read()
+            try:
+                z = Z.ZenPackage(data)
+            except Z.ZenError as e:
+                raise C.MgpError("%s is not a MotoGP 25 (zen) asset: %s" % (name.rsplit("/", 1)[-1], e))
+            game = "/Game/" + name.split("/", 2)[2][:-len(".uasset")]          # motogp25/Content/x -> /Game/x
+            pk.append((name, data, game, z.imported_package_ids()))
+        utoc = dest[:-4] + ".utoc"
+        log("Writing %d asset(s) -> %s (+ .ucas)" % (len(pk), utoc))
+        try:
+            IO.write_container(utoc, pk, log=log)
+            if files:
+                n, size = PW.write_pak(dest, files, log)
+            else:
+                PW.write_empty_pak(dest); n = 0
+        except PermissionError:
+            raise C.MgpError("cannot write %s - is the game running or the file in use? Close it and try again" % dest)
+        total = sum(os.path.getsize(dest[:-4] + e) for e in (".pak", ".utoc", ".ucas"))
+        return dict(path=dest, files=n + len(pk), bytes=total,
+                    summary="%s + .utoc/.ucas (%d assets, %d other files, %.1f MB)" % (dest, len(pk), n, total / 1048576))
 
     def pak_status(q, b):
         job = getattr(S, "pakjob", None)

@@ -219,3 +219,149 @@ def cityhash64(s):
         if p == end:
             break
     return h16((h16(v[0], w[0]) + smix(y) * k1 + z) & M, (h16(v[1], w[1]) + x) & M)
+
+
+# ---------------------------------------------------------------- BLAKE3 (chunk hashes in the .utoc)
+_B3_IV = (0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19)
+_B3_PERM = (2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8)
+
+
+def _b3_compress(cv, m, counter, blen, flags):
+    s = list(cv) + list(_B3_IV[:4]) + [counter & 0xFFFFFFFF, counter >> 32, blen, flags]
+    M = 0xFFFFFFFF
+    def g(a, b, c, d, x, y):
+        s[a] = (s[a] + s[b] + x) & M; v = s[d] ^ s[a]; s[d] = ((v >> 16) | (v << 16)) & M
+        s[c] = (s[c] + s[d]) & M; v = s[b] ^ s[c]; s[b] = ((v >> 12) | (v << 20)) & M
+        s[a] = (s[a] + s[b] + y) & M; v = s[d] ^ s[a]; s[d] = ((v >> 8) | (v << 24)) & M
+        s[c] = (s[c] + s[d]) & M; v = s[b] ^ s[c]; s[b] = ((v >> 7) | (v << 25)) & M
+    m = list(m)
+    for r in range(7):
+        g(0, 4, 8, 12, m[0], m[1]); g(1, 5, 9, 13, m[2], m[3]); g(2, 6, 10, 14, m[4], m[5]); g(3, 7, 11, 15, m[6], m[7])
+        g(0, 5, 10, 15, m[8], m[9]); g(1, 6, 11, 12, m[10], m[11]); g(2, 7, 8, 13, m[12], m[13]); g(3, 4, 9, 14, m[14], m[15])
+        if r < 6:
+            m = [m[i] for i in _B3_PERM]
+    for i in range(8):
+        s[i] ^= s[i + 8]; s[i + 8] ^= cv[i]
+    return s
+
+
+def blake3(data, size=32):
+    """BLAKE3 hash (default mode) of bytes; pure Python, fine for small files."""
+    START, END, PARENT, ROOT = 1, 2, 4, 8
+    words = lambda b: struct.unpack("<16I", b.ljust(64, b"\0"))
+    def chunk_out(i):                    # (cv, block words, counter, block len, flags) of chunk i's last block
+        c = data[i * 1024:(i + 1) * 1024]
+        cv, blocks = _B3_IV, [c[j:j + 64] for j in range(0, len(c), 64)] or [b""]
+        for j, b in enumerate(blocks[:-1]):
+            cv = _b3_compress(cv, words(b), i, 64, START if j == 0 else 0)[:8]
+        return cv, words(blocks[-1]), i, len(blocks[-1]), END | (START if len(blocks) == 1 else 0)
+    def node(lo, hi):
+        if hi - lo == 1:
+            return chunk_out(lo)
+        n = 1 << ((hi - lo - 1).bit_length() - 1)
+        left, right = node(lo, lo + n), node(lo + n, hi)
+        cvl = _b3_compress(*left)[:8]; cvr = _b3_compress(*right)[:8]
+        return _B3_IV, tuple(cvl) + tuple(cvr), 0, 64, PARENT
+    cv, m, ctr, blen, flags = node(0, max(1, (len(data) + 1023) // 1024))
+    return struct.pack("<16I", *_b3_compress(cv, m, ctr, blen, flags | ROOT))[:size]
+
+
+# ---------------------------------------------------------------- writer (retoc's layout)
+def package_id(game_path):
+    """FPackageId of '/Game/.../Name'."""
+    return cityhash64(game_path.lower().encode("utf-16le"))
+
+
+def _dir_index(paths, mount="../../../"):
+    """FIoDirectoryIndexResource for [(path 'motogp25/Content/.../X.uasset', toc index)]."""
+    NONE = 0xFFFFFFFF
+    strings, sidx = [], {}
+    def s(t):
+        if t not in sidx:
+            sidx[t] = len(strings); strings.append(t)
+        return sidx[t]
+    dirs = [[NONE, NONE, NONE, NONE]]                  # name, first child, next sibling, first file
+    files = []
+    children, last_dir, last_file = {0: {}}, {}, {}
+    for path, idx in paths:
+        parts = path.split("/")
+        d = 0
+        for part in parts[:-1]:
+            ch = children[d]
+            if part not in ch:                                         # appended to the child list (as retoc)
+                nd = len(dirs); dirs.append([s(part), NONE, NONE, NONE]); children[nd] = {}
+                if d in last_dir:
+                    dirs[last_dir[d]][2] = nd
+                else:
+                    dirs[d][1] = nd
+                last_dir[d] = nd
+                ch[part] = nd
+            d = ch[part]
+        f = len(files); files.append([s(parts[-1]), NONE, idx])
+        if d in last_file:
+            files[last_file[d]][1] = f
+        else:
+            dirs[d][3] = f
+        last_file[d] = f
+    def fstr(t):
+        b = t.encode("utf-8") + b"\0"
+        return struct.pack("<i", len(b)) + b
+    out = bytearray(fstr(mount))
+    out += struct.pack("<I", len(dirs)) + b"".join(struct.pack("<4I", *e) for e in dirs)
+    out += struct.pack("<I", len(files)) + b"".join(struct.pack("<3I", *e) for e in files)
+    out += struct.pack("<I", len(strings)) + b"".join(fstr(t) for t in strings)
+    return bytes(out)
+
+
+def write_container(utoc_path, packages, container_id=None, log=None):
+    """Write an uncompressed, unencrypted .utoc/.ucas (as retoc does) holding zen packages.
+    packages: [(path 'motogp25/Content/.../X.uasset', zen bytes, '/Game/.../X', [imported package ids])]."""
+    import hashlib
+    log = log or (lambda s: None)
+    BS = 65536
+    base = os.path.splitext(os.path.basename(utoc_path))[0]
+    cid = container_id or (cityhash64(base.lower().encode("utf-16le")) ^ 0x5A5A5A5A5A5A5A5A)
+    # container header: package ids sorted, store entries in the same order
+    pk = sorted(((package_id(g), sorted(set(imp))) for _, _, g, imp in packages), key=lambda x: x[0])
+    ids = [p for p, _ in pk]
+    if len(set(ids)) != len(ids):
+        raise IoStoreError("two packages with the same name")
+    entries, tail = bytearray(), bytearray()
+    for i, (_, imp) in enumerate(pk):
+        at = 16 * len(pk) + len(tail)
+        entries += struct.pack("<IIII", len(imp), (at - 16 * i) if imp else 0, 0, 0)
+        tail += b"".join(struct.pack("<Q", x) for x in imp)
+    blob = bytes(entries + tail)
+    ch = struct.pack("<IIQ", 0x496F436E, 4, cid) + struct.pack("<I", len(ids)) + b"".join(struct.pack("<Q", x) for x in ids)
+    ch += struct.pack("<I", len(blob)) + blob + bytes(24)
+    chunks = [(struct.pack("<QHBB", package_id(g), 0, 0, CHUNK_EXPORT_BUNDLE_DATA), data, path) for path, data, g, _ in packages]
+    chunks.append((struct.pack("<QHBB", cid, 0, 0, 6), ch, None))
+    offlen, blocks, metas = [], [], []
+    tmp = utoc_path[:-5] + ".ucas.tmp"
+    with open(tmp, "wb") as f:
+        logical = 0
+        for cidb, data, path in chunks:
+            if path:
+                log("  %s (%.1f KB)" % (path, len(data) / 1024))
+            offlen.append((logical, len(data)))
+            for j in range(0, max(len(data), 1), BS):
+                part = data[j:j + BS]
+                blocks.append((f.tell(), len(part), len(part), 0))
+                f.write(part)
+            logical += max(1, (len(data) + BS - 1) // BS) * BS
+            metas.append(blake3(data, 20) + bytes(4))
+    d = _dir_index([(path, i) for i, (_, _, path) in enumerate(chunks) if path])
+    hdr = bytearray(b"-==--==--==--==-")
+    hdr += struct.pack("<BBHIIIIIIIIIQ", 8, 0, 0, 144, len(chunks), len(blocks), 12, 0, 32, BS, len(d), 1, cid)
+    hdr += bytes(16) + struct.pack("<BBHIQII", F_INDEXED, 0, 0, 0, 0xFFFFFFFFFFFFFFFF, 0, 0) + bytes(40)
+    assert len(hdr) == 144
+    body = bytearray(hdr)
+    body += b"".join(c for c, _, _ in chunks)
+    body += b"".join(o.to_bytes(5, "big") + n.to_bytes(5, "big") for o, n in offlen)
+    body += b"".join(o.to_bytes(5, "little") + c.to_bytes(3, "little") + u.to_bytes(3, "little") + bytes([m]) for o, c, u, m in blocks)
+    body += d + b"".join(metas)
+    with open(utoc_path + ".tmp", "wb") as f:
+        f.write(body)
+    os.replace(tmp, utoc_path[:-5] + ".ucas")
+    os.replace(utoc_path + ".tmp", utoc_path)
+    return len(packages)

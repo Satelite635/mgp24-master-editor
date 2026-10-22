@@ -70,6 +70,26 @@ class ZenPackage:
         io = struct.unpack_from("<i", d, 28)[0]
         self.imports = list(struct.unpack_from("<%dQ" % ((eo - io) // 8), d, io))
 
+    def imported_package_ids(self):
+        """FPackageIds of the packages this one imports (its ImportedPackageNames name batch)."""
+        from mgp_iostore import package_id
+        at, end = struct.unpack_from("<i", self.data, 48)[0], self.header_size
+        if end - at < 4 or not struct.unpack_from("<I", self.data, at)[0]:
+            return []
+        n, nbytes = struct.unpack_from("<II", self.data, at)
+        p = at + 16 + 8 * n
+        lens = [struct.unpack_from(">H", self.data, p + 2 * i)[0] for i in range(n)]
+        p += 2 * n
+        out = []
+        for ln in lens:
+            if ln & 0x8000:
+                k = (ln & 0x7FFF) * 2; t = self.data[p:p + k].decode("utf-16le")
+            else:
+                k = ln; t = self.data[p:p + k].decode("latin-1")
+            p += k
+            out.append(package_id(t))
+        return sorted(out)
+
     def import_at(self, package_index):
         """FPackageObjectIndex of a negative FPackageIndex (import), else None."""
         i = -package_index - 1
