@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v94"
+VERSION = "v95"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -184,6 +184,11 @@ def _pick_powershell(kind, start):
     return out.stdout.strip()
 
 
+def gp24_only(P, what):
+    if P.game != "gp24":
+        raise C.MgpError("%s is not supported for MotoGP 25 yet" % what)
+
+
 def make_api(S):
     def state(q, b):
         cfg = S.load_cfg()
@@ -261,12 +266,19 @@ def make_api(S):
         if not os.path.isdir(out):
             raise C.MgpError("output folder does not exist: %r" % out)
         files = PW.collect(P.real_root, P.project)
+        held = []
+        if P.game != "gp24":                         # zen assets only load from .utoc/.ucas (not written yet)
+            held = [n for n, _ in files if n.lower().endswith((".uasset", ".ubulk", ".umap"))]
+            files = [f for f in files if f[0] not in held]
         if not files:
-            raise C.MgpError("the mod folder has no Content folder with files in it")
+            raise C.MgpError("the mod folder has no Content folder with files in it" if not held else
+                             "nothing to pack: MotoGP 25 assets (%d) need a .utoc/.ucas, which the tool cannot write yet" % len(held))
         dest = os.path.join(out, name + ".pak")
         if os.path.exists(dest) and not b.get("overwrite"):
             return dict(exists=True, path=dest)
         def work(log):
+            for n in held:
+                log("NOT packed (MotoGP 25 assets need .utoc/.ucas, not supported yet): " + n)
             if not b.get("force") and P.paks and P.game == "gp24":
                 log("Crash check before packing...")
                 block, warn, n = _crash_scan(P, log)
@@ -671,6 +683,7 @@ def make_api(S):
 
     def browse_clone(q, b):
         P = S.need()
+        gp24_only(P, "copying assets")
         old = b["pkg"]
         name = (b.get("name") or "").strip()
         if not name or "/" in name or "." in name:
@@ -1594,6 +1607,7 @@ def make_api(S):
     def clone_row(q, b):
         """Give one entry its own copy of its current asset (asset only, or with its variant materials/textures)."""
         P = S.need()
+        gp24_only(P, "copying assets")
         rel, key, mode = b["rel"], b["key"], b.get("mode", "asset")
         t = P.table(rel)
         need_key(t, key)
@@ -1797,6 +1811,7 @@ def make_api(S):
         if not st["exists"] and not copy:
             return dict(needs_choice=True, pkg=st["pkg"], old=old)
         if not st["exists"] and copy in ("asset", "set"):
+            gp24_only(P, "copying assets")
             r = P.replace_with_copy(rel, key, st["pkg"], copy)
             res.update(created=len(r["made"]), notes=r["notes"] + r["warnings"])
         else:

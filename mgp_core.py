@@ -18,8 +18,8 @@ DB_REL = "Content/assets/data/db/NoCook/db.sqlite3"
 BIND_DIR = "Content/assets/graphics/bindings"
 STYLE_REL = "Content/assets/data/datatables/Anim/RidingStyle_DT"
 SIDECARS = (".uasset", ".uexp", ".ubulk")
-# Supported games: id -> Unreal project folder name. MotoGP 25 (UE5.5, IoStore) is limited to the non-asset
-# files that stay in its .pak (Localization .locres, Database db.sqlite3); its .uassets live in .utoc/.ucas.
+# Supported games: id -> Unreal project folder name. MotoGP 25 (UE5.5, IoStore): its .uassets are zen
+# packages in .utoc/.ucas (mgp_iostore, mgp_zen); only the binding tables are edited there so far.
 GAMES = {"gp24": "motogp24", "gp25": "motogp25"}
 
 
@@ -665,9 +665,6 @@ class Project:
 
     def reload_bindings(self):
         self._tables, self._names, self._style = {}, None, None
-        if self.game != "gp24":                      # GP25's binding tables are zen assets in .utoc/.ucas: not read yet
-            self._names, self.dt = [], None
-            return
         self.dt = self.table(DT_REL)                 # the bike table (DT_BikeOfficial)
 
     def refresh_paks(self):
@@ -681,7 +678,14 @@ class Project:
     # ---- every binding DataTable (riders' gear, suits, bike extras, ...)
     def table(self, rel):
         if rel not in self._tables:
-            self._tables[rel] = BindingTable(self.src.read(rel + ".uasset"), self.src.read(rel + ".uexp"))
+            if self.game != "gp24":                  # zen package: one .uasset, no .uexp
+                import mgp_zen
+                try:
+                    self._tables[rel] = mgp_zen.ZenBindingTable(self.src.read(rel + ".uasset"))
+                except mgp_zen.ZenError as e:
+                    raise MgpError("%s: %s" % (rel.rsplit("/", 1)[-1], e))
+            else:
+                self._tables[rel] = BindingTable(self.src.read(rel + ".uasset"), self.src.read(rel + ".uexp"))
         return self._tables[rel]
 
     def table_names(self):
@@ -710,6 +714,8 @@ class Project:
 
     # ---- riding style (RidingStyle_DT, keyed like the binding tables)
     def style(self):
+        if self._style is None and self.game != "gp24":
+            raise MgpError("riding style is not supported for MotoGP 25 yet")
         if self._style is None:
             self._style = StyleTable(self.src.read(STYLE_REL + ".uasset"), self.src.read(STYLE_REL + ".uexp"))
         return self._style
@@ -733,7 +739,11 @@ class Project:
         rel = game_to_rel(pkg) + ".uasset"
         if not self.src.exists(rel):
             raise MgpError("asset not found in mod folder or paks: " + pkg)
-        names = UAsset(self.src.read(rel)).export_object_names()
+        if self.game != "gp24":
+            import mgp_zen
+            names = [e["name"] for e in mgp_zen.ZenPackage(self.src.read(rel)).exports]
+        else:
+            names = UAsset(self.src.read(rel)).export_object_names()
         if not names:
             raise MgpError("asset has no exports: " + pkg)
         return pkg + "." + names[0]
@@ -1061,6 +1071,8 @@ class Project:
     def clone_for_pilot(self, pilot_key, new_tag, dry_run=False, rel=None):
         """Clone the pilot's set under new_tag and repoint the pilot's binding row to it.
         `rel`: the bike table to use (default DT_BikeOfficial)."""
+        if self.game != "gp24":
+            raise MgpError("cloning bike sets is not supported for MotoGP 25 yet - repoint to an existing set instead")
         dt = self.table(rel) if rel else self.dt
         obj = dt.target(pilot_key)
         plan = plan_clone(self.src, obj, new_tag, dt)
