@@ -709,7 +709,10 @@ class Project:
             except Exception:
                 continue
             if key in t.rows:
-                out.append((rel, category(rel), t.target(key)))
+                try:
+                    out.append((rel, category(rel), t.target(key)))
+                except Exception:                        # one odd table must not hide the others
+                    continue
         return out
 
     # ---- riding style (RidingStyle_DT, keyed like the binding tables)

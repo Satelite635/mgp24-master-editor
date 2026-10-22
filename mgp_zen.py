@@ -29,6 +29,18 @@ class ZenError(Exception):
     pass
 
 
+def split_fname(text):
+    """'T_Suit_12' -> ('T_Suit', 13) like FName does: a trailing _N (no leading zero) is stored as number N+1."""
+    base, sep, num = text.rpartition("_")
+    if sep and base and num.isdigit() and (num == "0" or num[0] != "0") and len(num) <= 10 and int(num) < 2 ** 31 - 1:
+        return base, int(num) + 1
+    return text, 0
+
+
+def join_fname(text, number):
+    return text + ("_%d" % (number - 1) if number else "")
+
+
 class ZenPackage:
     def __init__(self, data):
         d = bytes(data)
@@ -167,7 +179,7 @@ class ZenBindingTable:
             ni, nn = struct.unpack_from("<II", x, p)
             if x[p + 8:p + 10] != b"\x00\x03" or struct.unpack_from("<i", x, p + 26)[0] != 0:
                 raise ZenError("unexpected row layout at %d" % p)
-            key = self.names[ni] + ("_%d" % (nn - 1) if nn else "")
+            key = join_fname(self.names[ni], nn)
             self.rows[key] = dict(off=p + 10)
             p += self.ROW
         if p + 4 != len(x) or struct.unpack_from("<I", x, p)[0] != PKG_TAG:
@@ -182,14 +194,11 @@ class ZenBindingTable:
         return pi, ai, pn, an
 
     def target_index(self, row):
-        pi, ai, _, _ = self._pair(row)
-        return (pi, ai)
+        return self._pair(row)
 
     def target(self, row):
         pi, ai, pn, an = self._pair(row)
-        if pn or an:
-            raise ZenError("numbered FName in a row target - not supported")
-        return self.names[pi] + "." + self.names[ai]
+        return join_fname(self.names[pi], pn) + "." + join_fname(self.names[ai], an)
 
     def users_of(self, idx):
         return [r for r in self.rows if self.target_index(r) == idx]
@@ -204,7 +213,8 @@ class ZenBindingTable:
         if not new_obj_path.startswith("/Game/") or "." not in new_obj_path:
             raise ZenError("target must look like /Game/.../pkg.obj")
         pkg, _, obj = new_obj_path.partition(".")
-        struct.pack_into("<IIII", self.x, self.rows[row]["off"], self._name(pkg), 0, self._name(obj), 0)
+        (pb, pn), (ob, on) = split_fname(pkg), split_fname(obj)
+        struct.pack_into("<IIII", self.x, self.rows[row]["off"], self._name(pb), pn, self._name(ob), on)
 
     def to_bytes(self):
         return self.pkg.build(self.names, bytes(self.x), [len(self.x) - 4])

@@ -1,5 +1,6 @@
 # Changelog (versions shipped as zips; bump `VERSION` in webui.py AND `HV` in webui.html)
 
+- **v99** MotoGP 25 Riders & bindings: row targets with numbered FNames (name + number, e.g. `T_Suit_12` stored as `T_Suit` #13) are read and written like FName does (`split_fname`); before, they raised 'numbered FName ... not supported' and the view stayed empty. A table whose row cannot be read no longer hides the others.
 - **v98** start.bat installs `blake3` once if missing (like pycryptodome); a failed install is not fatal (pure-Python fallback).
 - **v97** MotoGP 25 Pack mod also takes `.ubulk` (next to its .uasset): written as a BulkData chunk (type 2) with the package's id, as in Faizal's Gresinisepang_P (UE-made, Oodle) container. `.m.ubulk`/`.uptnl` still refused. BLAKE3 uses the `blake3` pip module when installed (pure Python is ~1 MB/s).
 - **v96** MotoGP 25 **Pack mod** writes zen assets as `<name>_P.utoc/.ucas` + `.pak` (`mgp_iostore.write_container`: uncompressed, unencrypted, no perfect hash, container header v4, BLAKE3 chunk hashes - retoc's layout; non-assets go in the .pak, else retoc's empty v11 .pak). Checked: rewriting Faizal's retoc mod (2026_Aero26_Allbike_Model_P) gives a byte-identical .utoc and .ucas (`test_zen.py`). Only .uasset (no .ubulk) so far.
