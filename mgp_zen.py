@@ -237,3 +237,132 @@ class ZenBindingTable:
         ZenBindingTable(data)                # must re-parse before it is written
         with open(uasset_path, "wb") as f:
             f.write(data)
+
+
+STYLE_FIELDS = [("StartLeg", "FloatProperty"), ("LegOut", "FloatProperty"), ("LegOutType", "FloatProperty"),
+                ("BrakeFingers", "IntProperty"), ("RiderMaxLean", "FloatProperty"), ("OldSchoolAmount", "FloatProperty"),
+                ("RidingStyle", "IntProperty"), ("SubRidingStyle", "IntProperty")]      # RidingStyle struct order (GP25 .usmap)
+
+
+def _unversioned_header(x, p):
+    """-> ([schema indices that have a value], set of those that are zero (no bytes)), new offset."""
+    present, zeros, idx, frags = [], set(), 0, []
+    while True:
+        h = struct.unpack_from("<H", x, p)[0]; p += 2
+        frags.append(h)
+        idx += h & 0x7F
+        n = h >> 9
+        present += [(idx + i, bool(h & 0x80)) for i in range(n)]
+        idx += n
+        if h & 0x100:
+            break
+    masked = [i for i, z in present if z]
+    if masked:
+        nb = 1 if len(masked) <= 8 else 2 if len(masked) <= 16 else ((len(masked) + 31) // 32) * 4
+        bits = int.from_bytes(x[p:p + nb], "little"); p += nb
+        zeros = {i for k, i in enumerate(masked) if bits >> k & 1}
+    return [i for i, _ in present], zeros, p
+
+
+class ZenStyleTable:
+    """GP25 RidingStyle_DT (zen, unversioned rows of 8 Int/Float fields); same interface as mgp_core.StyleTable.
+    Row = [FName 8][unversioned header][zero mask][non-zero values 4 bytes each]. Rows are re-serialized on save
+    (one fragment of all 8 fields, zeros in the mask), which is how the game's own file is written."""
+
+    FMT = {"IntProperty": "<i", "FloatProperty": "<f"}
+
+    def __init__(self, uasset_bytes, uexp_bytes=None):
+        self.pkg = ZenPackage(uasset_bytes)
+        if len(self.pkg.exports) != 1:
+            raise ZenError("RidingStyle_DT: expected one export, found %d" % len(self.pkg.exports))
+        self.names = list(self.pkg.names)
+        x = self.pkg.export_data()
+        if x[:2] != b"\x00\x03":
+            raise ZenError("RidingStyle_DT header not understood (%s)" % x[:2].hex())
+        self.head = x[:10]                                  # header, RowStruct import, HasGuid
+        count = struct.unpack_from("<i", x, 10)[0]
+        p, self.order, self._vals = 14, [], {}
+        for _ in range(count):
+            ni, nn = struct.unpack_from("<II", x, p); p += 8
+            key = join_fname(self.names[ni], nn)
+            present, zeros, p = _unversioned_header(x, p)
+            vals = {}
+            for i in present:
+                if i >= len(STYLE_FIELDS):
+                    raise ZenError("RidingStyle_DT row %s: field #%d not in the known layout" % (key, i))
+                name, typ = STYLE_FIELDS[i]
+                if i in zeros:
+                    vals[name] = 0
+                else:
+                    vals[name] = struct.unpack_from(self.FMT[typ], x, p)[0]; p += 4
+            for name, _ in STYLE_FIELDS:                      # skipped = default = 0
+                vals.setdefault(name, 0)
+            self.order.append(key)
+            self._vals[key] = vals
+        if p + 4 != len(x) or struct.unpack_from("<I", x, p)[0] != PKG_TAG:
+            raise ZenError("RidingStyle_DT end not understood - layout differs")
+        self.rows = {k: {n: (t, None) for n, t in STYLE_FIELDS} for k in self.order}
+
+    def presets(self):
+        return [r for r in self.rows if "_" not in r]
+
+    def values(self, key):
+        return {n: (int(self._vals[key][n]) if t == "IntProperty" else round(float(self._vals[key][n]), 4)) for n, t in STYLE_FIELDS}
+
+    def types(self, key):
+        return dict(STYLE_FIELDS)
+
+    def set_values(self, key, vals):
+        if key not in self.rows:
+            raise ZenError("no riding-style row for " + key)
+        old, types, changed = self.values(key), dict(STYLE_FIELDS), {}
+        for name, v in vals.items():
+            if name not in types:
+                raise ZenError("unknown riding-style field: " + name)
+            v = int(v) if types[name] == "IntProperty" else struct.unpack("<f", struct.pack("<f", float(v)))[0]
+            self._vals[key][name] = v
+            new = self.values(key)[name]
+            if new != old[name]:
+                changed[name] = (old[name], new)
+        return changed
+
+    def add_row(self, key, donor):
+        if key in self.rows:
+            raise ZenError("%s already has a riding-style row" % key)
+        if donor not in self.rows:
+            raise ZenError("no riding-style row for " + donor)
+        self.order.append(key)
+        self._vals[key] = dict(self._vals[donor])
+        self.rows[key] = dict(self.rows[donor])
+
+    def _row_bytes(self, key):
+        base, num = split_fname(key)
+        if base not in self.names:
+            self.names.append(base)
+        out = bytearray(struct.pack("<II", self.names.index(base), num))
+        mask = 0
+        vals = b""
+        for i, (name, typ) in enumerate(STYLE_FIELDS):
+            v = self._vals[key][name]
+            if v == 0:
+                mask |= 1 << i
+            else:
+                vals += struct.pack(self.FMT[typ], v)
+        n = len(STYLE_FIELDS)
+        out += struct.pack("<H", (n << 9) | 0x100 | (0x80 if mask else 0))
+        if mask:
+            out += bytes([mask])
+        return bytes(out + vals)
+
+    def to_bytes(self):
+        body = bytearray(self.head) + struct.pack("<i", len(self.order))
+        for k in self.order:
+            body += self._row_bytes(k)
+        body += struct.pack("<I", PKG_TAG)
+        return self.pkg.build(self.names, bytes(body), [len(body) - 4])
+
+    def save(self, uasset_path, uexp_path=None):
+        data = self.to_bytes()
+        ZenStyleTable(data)                    # must re-parse before it is written
+        with open(uasset_path, "wb") as f:
+            f.write(data)

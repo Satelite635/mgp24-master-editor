@@ -717,8 +717,12 @@ class Project:
 
     # ---- riding style (RidingStyle_DT, keyed like the binding tables)
     def style(self):
-        if self._style is None and self.game != "gp24":
-            raise MgpError("riding style is not supported for MotoGP 25 yet")
+        if self._style is None and self.game != "gp24":         # zen package: one .uasset
+            import mgp_zen
+            try:
+                self._style = mgp_zen.ZenStyleTable(self.src.read(STYLE_REL + ".uasset"))
+            except mgp_zen.ZenError as e:
+                raise MgpError("RidingStyle_DT: %s" % e)
         if self._style is None:
             self._style = StyleTable(self.src.read(STYLE_REL + ".uasset"), self.src.read(STYLE_REL + ".uexp"))
         return self._style

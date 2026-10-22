@@ -25,6 +25,15 @@ for f in sorted(glob.glob(os.path.join(d, "[Pp]rojector*.uasset"))):   # project
     PJ.patch(a, ps, {ps[0]["tag"]: v})
     assert PJ.parse(a.to_bytes(), None)[1][0]["loc"] == [1.0, 2.0, 3.0] and len(a.to_bytes()) == len(data)
     print("ok", os.path.basename(f), [p["tag"] for p in ps])
+for f in glob.glob(os.path.join(d, "RidingStyle_DT.uasset")):        # riding style: identical rebuild, edit + add row re-parse
+    data = open(f, "rb").read()
+    t = Z.ZenStyleTable(data)
+    assert t.to_bytes() == data, f
+    t.set_values("Balanced", {"LegOutType": 0.5, "StartLeg": 0})
+    t.add_row("MotoGP_Test-Rider", "Balanced")
+    t2 = Z.ZenStyleTable(t.to_bytes())
+    assert t2.values("MotoGP_Test-Rider") == t2.values("Balanced") and t2.values("Balanced")["LegOutType"] == 0.5
+    print("ok RidingStyle_DT", len(t.rows) - 1, "rows")
 if len(sys.argv) > 2:
     src = I.Toc(sys.argv[2])
     pk = []
