@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v99"
+VERSION = "v100"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -20,6 +20,24 @@ import projfile as PJ
 import fontswap as FS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+PER_GAME = ("mod_folder", "paks_dir", "include_patch", "game")       # Setup fields each game keeps for itself
+
+
+def gk(key, game):
+    """Config key of a per-game setting: MotoGP 24 keeps the old names, others get a suffix ('paks_dir_gp25')."""
+    return key if game == "gp24" else key + "_" + game
+
+
+def migrate_cfg(cfg):
+    """Before v100 all games shared one set of paths; a config last used for GP25 holds GP25's paths there."""
+    g = cfg.get("game_id", "gp24")
+    if g != "gp24" and gk("mod_folder", g) not in cfg:
+        for k in PER_GAME:
+            if k in cfg and k != "game":
+                cfg[gk(k, g)] = cfg.pop(k)
+    return cfg
+
+
 GAME_KEYS = {"gp25": "0x5B209CEDF7FEF3C9B1E1EB4579099839DAA05A8D0A1E1948431E91FDB2004A77"}   # gp24's is default_key
 
 
@@ -42,7 +60,8 @@ class State:
         P = C.Project(folder, paks or None, use, include_patch, staged=True, game=game)
         self.close_db()
         self.P = P
-        cfg.update(mod_folder=folder, paks_dir=paks or "", include_patch=include_patch, game_id=game)
+        cfg.update({gk("mod_folder", game): folder, gk("paks_dir", game): paks or "", gk("include_patch", game): include_patch,
+                    "game_id": game})
         if key:
             cfg[kname] = key
         self.save_cfg(cfg)
@@ -192,8 +211,11 @@ def gp24_only(P, what):
 def make_api(S):
     def state(q, b):
         cfg = S.load_cfg()
-        return dict(version=VERSION, uassetgui=cfg.get("uassetgui", ""), game=cfg.get("game", ""), open=bool(S.P), mod_folder=cfg.get("mod_folder", ""), paks_dir=cfg.get("paks_dir", ""),
-                    include_patch=cfg.get("include_patch", True), has_key=bool(cfg.get("aes_key")), game_id=S.P.game if S.P else cfg.get("game_id", "gp24"),
+        g = S.P.game if S.P else cfg.get("game_id", "gp24")
+        games = {x: dict(mod_folder=cfg.get(gk("mod_folder", x), ""), paks_dir=cfg.get(gk("paks_dir", x), ""),
+                         include_patch=cfg.get(gk("include_patch", x), True), game=cfg.get(gk("game", x), "")) for x in C.GAMES}
+        return dict(version=VERSION, uassetgui=cfg.get("uassetgui", ""), open=bool(S.P), games=games, **games[g],
+                    has_key=bool(cfg.get("aes_key")), game_id=g,
                     paks=bool(S.P and S.P.paks), root=S.P.root if S.P else "")
 
     def changes(q=None, b=None):
@@ -1737,11 +1759,13 @@ def make_api(S):
 
     def settings(q, b):
         cfg = S.load_cfg()
-        for k in ("uassetgui", "game"):
-            if k in b:
-                cfg[k] = str(b[k]).strip().strip('"')
+        g = b.get("game_id") or (S.P.game if S.P else cfg.get("game_id", "gp24"))
+        if "uassetgui" in b:
+            cfg["uassetgui"] = str(b["uassetgui"]).strip().strip('"')
+        if "game" in b:
+            cfg[gk("game", g)] = str(b["game"]).strip().strip('"')
         S.save_cfg(cfg)
-        return dict(uassetgui=cfg.get("uassetgui", ""), game=cfg.get("game", ""))
+        return dict(uassetgui=cfg.get("uassetgui", ""), game=cfg.get(gk("game", g), ""))
 
     def _lnk_target(path):
         """(target, arguments, working dir) of a Windows .lnk shortcut."""
@@ -1756,7 +1780,8 @@ def make_api(S):
 
     def launch(q, b):
         """Start the game from an .exe, or from a shortcut (.lnk / Steam .url)."""
-        path = (b.get("path") or S.load_cfg().get("game") or "").strip().strip('"')
+        cfg = S.load_cfg()
+        path = (b.get("path") or cfg.get(gk("game", S.P.game if S.P else cfg.get("game_id", "gp24"))) or "").strip().strip('"')
         if not path:
             raise C.MgpError("set the game's .exe or shortcut in Setup first")
         if not os.path.isfile(path):
@@ -2012,9 +2037,12 @@ def serve(load_cfg, save_cfg, default_key, port=8765, open_browser=True):
     S = State(load_cfg, save_cfg, default_key)
     S.on_quit = lambda: None
     cfg = load_cfg()
-    if cfg.get("mod_folder") and os.path.isdir(cfg["mod_folder"]):
+    if cfg.get("game_id", "gp24") != "gp24" and gk("mod_folder", cfg["game_id"]) not in cfg:
+        save_cfg(migrate_cfg(cfg))
+    g = cfg.get("game_id", "gp24")
+    if cfg.get(gk("mod_folder", g)) and os.path.isdir(cfg[gk("mod_folder", g)]):
         try:
-            S.open(cfg["mod_folder"], cfg.get("paks_dir", ""), "", cfg.get("include_patch", True), cfg.get("game_id", "gp24"))
+            S.open(cfg[gk("mod_folder", g)], cfg.get(gk("paks_dir", g), ""), "", cfg.get(gk("include_patch", g), True), g)
         except Exception as e:
             print("could not reopen last project:", e)
     api = make_api(S)

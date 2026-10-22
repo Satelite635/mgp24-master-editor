@@ -1,5 +1,6 @@
 # Changelog (versions shipped as zips; bump `VERSION` in webui.py AND `HV` in webui.html)
 
+- **v100** Setup keeps mod folder, Paks folder, patch-pak tick and game exe per game (`gk()`: GP24 keeps the old config keys, GP25 uses `*_gp25`); switching the Game picker fills that game's paths. A config last used for GP25 is migrated once (its shared paths become GP25's; GP24's must be entered again).
 - **v99** MotoGP 25 Riders & bindings: row targets with numbered FNames (name + number, e.g. `T_Suit_12` stored as `T_Suit` #13) are read and written like FName does (`split_fname`); before, they raised 'numbered FName ... not supported' and the view stayed empty. A table whose row cannot be read no longer hides the others.
 - **v98** start.bat installs `blake3` once if missing (like pycryptodome); a failed install is not fatal (pure-Python fallback).
 - **v97** MotoGP 25 Pack mod also takes `.ubulk` (next to its .uasset): written as a BulkData chunk (type 2) with the package's id, as in Faizal's Gresinisepang_P (UE-made, Oodle) container. `.m.ubulk`/`.uptnl` still refused. BLAKE3 uses the `blake3` pip module when installed (pure Python is ~1 MB/s).
