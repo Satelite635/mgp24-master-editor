@@ -18,6 +18,9 @@ DB_REL = "Content/assets/data/db/NoCook/db.sqlite3"
 BIND_DIR = "Content/assets/graphics/bindings"
 STYLE_REL = "Content/assets/data/datatables/Anim/RidingStyle_DT"
 SIDECARS = (".uasset", ".uexp", ".ubulk")
+# Supported games: id -> Unreal project folder name. MotoGP 25 (UE5.5, IoStore) is limited to the non-asset
+# files that stay in its .pak (Localization .locres, Database db.sqlite3); its .uassets live in .utoc/.ucas.
+GAMES = {"gp24": "motogp24", "gp25": "motogp25"}
 
 
 class MgpError(Exception):
@@ -466,9 +469,9 @@ class Source:
         return self.paks.which(rel) if self.paks and self.paks.exists(rel) else "missing"
 
 
-def find_root(path):
+def find_root(path, project="motogp24"):
     """Mod/working folder: the folder that holds Content/, or its parent (e.g. 'motogp24')."""
-    for cand in (path, os.path.join(path, "motogp24")):
+    for cand in (path, os.path.join(path, project)):
         if os.path.isdir(os.path.join(cand, "Content")):
             return cand
     if os.path.isdir(path):
@@ -638,15 +641,18 @@ def normalize_target(text):
 
 
 class Project:
-    def __init__(self, work, paks_dir=None, key=None, include_patch=True, staged=False):
-        self.real_root = find_root(work)
+    def __init__(self, work, paks_dir=None, key=None, include_patch=True, staged=False, game="gp24"):
+        if game not in GAMES:
+            raise MgpError("unknown game %r" % game)
+        self.game, self.project = game, GAMES[game]
+        self.real_root = find_root(work, self.project)
         self.staged = staged
         self.root = os.path.join(self.real_root, STAGING) if staged else self.real_root
         self.paks = None
         if paks_dir:
             from mgp_pak import PakSet, PakError
             try:
-                self.paks = PakSet(paks_dir, key or "", include_patch=include_patch)
+                self.paks = PakSet(paks_dir, key or "", project=self.project, include_patch=include_patch)
             except PakError as e:
                 raise MgpError(str(e))
         self.src = Source(self.root, self.paks, self.real_root if staged else None)
@@ -659,6 +665,9 @@ class Project:
 
     def reload_bindings(self):
         self._tables, self._names, self._style = {}, None, None
+        if self.game != "gp24":                      # GP25's binding tables are zen assets in .utoc/.ucas: not read yet
+            self._names, self.dt = [], None
+            return
         self.dt = self.table(DT_REL)                 # the bike table (DT_BikeOfficial)
 
     def refresh_paks(self):

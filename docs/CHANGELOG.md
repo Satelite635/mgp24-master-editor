@@ -1,5 +1,6 @@
 # Changelog (versions shipped as zips; bump `VERSION` in webui.py AND `HV` in webui.html)
 
+- **v92** Setup: **Game** picker (MotoGP 24 / MotoGP 25). GP25 (UE5.5, IoStore) is a test mode: only Localization and Database are shown, since `.locres`/`db.sqlite3` stay in its legacy .pak; its .uassets (bindings etc.) are zen packages in .utoc/.ucas and are not read yet. Paths use `motogp25/`, packing skips the crash check, each game keeps its own saved AES key (GP25 default built in). Untested in game: whether GP25 loads a plain v8 `_P.pak` without .utoc/.ucas.
 - **v91** Font swap Browse: the file dialog filters fonts (.ttf/.otf/.ufont, kind "font") instead of programs (.exe).
 - **v90** Projector table column "Number texture": shows the rider's number texture name for projectors that have a texture (the file's own `47` in the tooltip); "-" = no texture in the file.
 - **v89** Projector section shows the entry's number: `DT_Numbers_*` row → `ProjectorNumbers/customization_data/<Rider>_Number` → Texture2D package(s) it imports (`_number_textures`). Column renamed "Texture in file" (the 47 placeholder).

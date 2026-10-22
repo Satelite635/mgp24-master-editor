@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v91"
+VERSION = "v92"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -20,6 +20,7 @@ import projfile as PJ
 import fontswap as FS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+GAME_KEYS = {"gp25": "0x5B209CEDF7FEF3C9B1E1EB4579099839DAA05A8D0A1E1948431E91FDB2004A77"}   # gp24's is default_key
 
 
 class State:
@@ -30,18 +31,20 @@ class State:
         self.lock = threading.RLock()
         self.token = secrets.token_hex(16)
 
-    def open(self, folder, paks, key, include_patch):
+    def open(self, folder, paks, key, include_patch, game="gp24"):
         if not folder or not os.path.isdir(folder):
             raise C.MgpError("mod folder does not exist: %r (create an empty folder first)" % folder)
         if paks and not os.path.isdir(paks):
             raise C.MgpError("Paks folder does not exist: %r" % paks)
-        P = C.Project(folder, paks or None, key or self.default_key, include_patch, staged=True)
+        cfg = self.load_cfg()
+        kname = "aes_key" if game == "gp24" else "aes_key_" + game      # each game keeps its own saved key
+        use = key or cfg.get(kname) or GAME_KEYS.get(game) or self.default_key
+        P = C.Project(folder, paks or None, use, include_patch, staged=True, game=game)
         self.close_db()
         self.P = P
-        cfg = self.load_cfg()
-        cfg.update(mod_folder=folder, paks_dir=paks or "", include_patch=include_patch)
+        cfg.update(mod_folder=folder, paks_dir=paks or "", include_patch=include_patch, game_id=game)
         if key:
-            cfg["aes_key"] = key
+            cfg[kname] = key
         self.save_cfg(cfg)
 
     def close_db(self):
@@ -185,7 +188,7 @@ def make_api(S):
     def state(q, b):
         cfg = S.load_cfg()
         return dict(version=VERSION, uassetgui=cfg.get("uassetgui", ""), game=cfg.get("game", ""), open=bool(S.P), mod_folder=cfg.get("mod_folder", ""), paks_dir=cfg.get("paks_dir", ""),
-                    include_patch=cfg.get("include_patch", True), has_key=bool(cfg.get("aes_key")),
+                    include_patch=cfg.get("include_patch", True), has_key=bool(cfg.get("aes_key")), game_id=S.P.game if S.P else cfg.get("game_id", "gp24"),
                     paks=bool(S.P and S.P.paks), root=S.P.root if S.P else "")
 
     def changes(q=None, b=None):
@@ -257,14 +260,14 @@ def make_api(S):
         os.makedirs(out, exist_ok=True)
         if not os.path.isdir(out):
             raise C.MgpError("output folder does not exist: %r" % out)
-        files = PW.collect(P.real_root)
+        files = PW.collect(P.real_root, P.project)
         if not files:
             raise C.MgpError("the mod folder has no Content folder with files in it")
         dest = os.path.join(out, name + ".pak")
         if os.path.exists(dest) and not b.get("overwrite"):
             return dict(exists=True, path=dest)
         def work(log):
-            if not b.get("force") and P.paks:
+            if not b.get("force") and P.paks and P.game == "gp24":
                 log("Crash check before packing...")
                 block, warn, n = _crash_scan(P, log)
                 if block:
@@ -1734,7 +1737,8 @@ def make_api(S):
     def open_(q, b):
         if S.P and S.P.staged_files():
             raise C.MgpError("you have unsaved changes - save or discard them before opening another project")
-        S.open(b.get("mod_folder", "").strip(), b.get("paks_dir", "").strip(), b.get("aes_key", "").strip(), bool(b.get("include_patch", True)))
+        S.open(b.get("mod_folder", "").strip(), b.get("paks_dir", "").strip(), b.get("aes_key", "").strip(), bool(b.get("include_patch", True)),
+               b.get("game_id") or "gp24")
         return state(q, b)
 
     def pilots(q, b):
@@ -1959,7 +1963,7 @@ def serve(load_cfg, save_cfg, default_key, port=8765, open_browser=True):
     cfg = load_cfg()
     if cfg.get("mod_folder") and os.path.isdir(cfg["mod_folder"]):
         try:
-            S.open(cfg["mod_folder"], cfg.get("paks_dir", ""), cfg.get("aes_key", ""), cfg.get("include_patch", True))
+            S.open(cfg["mod_folder"], cfg.get("paks_dir", ""), "", cfg.get("include_patch", True), cfg.get("game_id", "gp24"))
         except Exception as e:
             print("could not reopen last project:", e)
     api = make_api(S)
