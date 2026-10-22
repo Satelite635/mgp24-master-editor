@@ -12,14 +12,14 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v91"
+VERSION = "v92"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
 import projfile as PJ
 import fontswap as FS
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))   # _MEIPASS: inside the .exe
 
 
 class State:

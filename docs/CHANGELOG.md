@@ -1,5 +1,6 @@
 # Changelog (versions shipped as zips; bump `VERSION` in webui.py AND `HV` in webui.html)
 
+- **v92** Windows exe: `build_exe.py` (PyInstaller one-file, console, webui.html bundled) and GitHub Actions `build-exe.yml` (windows-latest: build, smoke test that the exe serves the page, artifact = exe + README + add-on zip). Frozen: webui.html read from `sys._MEIPASS`, mgp_config.json next to the exe; window waits for Enter on exit/crash when started by double-click.
 - **v91** Font swap Browse: the file dialog filters fonts (.ttf/.otf/.ufont, kind "font") instead of programs (.exe).
 - **v90** Projector table column "Number texture": shows the rider's number texture name for projectors that have a texture (the file's own `47` in the tooltip); "-" = no texture in the file.
 - **v89** Projector section shows the entry's number: `DT_Numbers_*` row → `ProjectorNumbers/customization_data/<Rider>_Number` → Texture2D package(s) it imports (`_number_textures`). Column renamed "Texture in file" (the 47 placeholder).
