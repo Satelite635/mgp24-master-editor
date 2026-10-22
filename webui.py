@@ -12,11 +12,12 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v102"
+VERSION = "v103"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
 import projfile as PJ
+import mgp_retoc as MR
 import fontswap as FS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -214,7 +215,7 @@ def make_api(S):
         g = S.P.game if S.P else cfg.get("game_id", "gp24")
         games = {x: dict(mod_folder=cfg.get(gk("mod_folder", x), ""), paks_dir=cfg.get(gk("paks_dir", x), ""),
                          include_patch=cfg.get(gk("include_patch", x), True), game=cfg.get(gk("game", x), "")) for x in C.GAMES}
-        return dict(version=VERSION, uassetgui=cfg.get("uassetgui", ""), open=bool(S.P), games=games, **games[g],
+        return dict(version=VERSION, uassetgui=cfg.get("uassetgui", ""), retoc=cfg.get("retoc", ""), retoc_found=MR.find(cfg.get("retoc", "")), open=bool(S.P), games=games, **games[g],
                     has_key=bool(cfg.get("aes_key")), game_id=g,
                     paks=bool(S.P and S.P.paks), root=S.P.root if S.P else "")
 
@@ -288,25 +289,29 @@ def make_api(S):
         if not os.path.isdir(out):
             raise C.MgpError("output folder does not exist: %r" % out)
         files = PW.collect(P.real_root, P.project)
-        zen = []
+        zen, legacy = [], []
         if P.game != "gp24":                         # zen assets load only from a .utoc/.ucas next to the .pak
+            # legacy assets (.uasset + .uexp, e.g. extracted for UAssetGUI) are turned back into zen with retoc
+            lstems = {n.lower()[:-5] for n, _ in files if n.lower().endswith(".uexp")}
+            legacy = [f for f in files if f[0].lower().rsplit(".", 1)[0] in lstems and not f[0].lower().endswith(".m.ubulk")]
+            files = [f for f in files if f not in legacy]
             zen = [f for f in files if f[0].lower().endswith((".uasset", ".ubulk", ".umap", ".uptnl"))]
             files = [f for f in files if f not in zen]
             other = [n for n, _ in zen if not n.lower().endswith((".uasset", ".ubulk")) or n.lower().endswith(".m.ubulk")]
             if other:
                 raise C.MgpError("MotoGP 25: only .uasset and .ubulk files can be packed so far, not: " + ", ".join(o.rsplit("/", 1)[-1] for o in other[:5]))
-            stems = {n.lower()[:-7] for n, _ in zen if n.lower().endswith(".uasset")}
-            lone = [n for n, _ in zen if n.lower().endswith(".ubulk") and n.lower()[:-6] not in stems]
+            stems = {n.lower()[:-7] for n, _ in zen if n.lower().endswith(".uasset")} | lstems
+            lone = [n for n, _ in zen + legacy if n.lower().endswith((".ubulk", ".uexp")) and n.lower().rsplit(".", 1)[0] not in stems]
             if lone:
                 raise C.MgpError("a .ubulk needs its .uasset next to it in the mod folder: " + ", ".join(o.rsplit("/", 1)[-1] for o in lone[:5]))
-        if not files and not zen:
+        if not files and not zen and not legacy:
             raise C.MgpError("the mod folder has no Content folder with files in it")
         dest = os.path.join(out, name + ".pak")
         if os.path.exists(dest) and not b.get("overwrite"):
             return dict(exists=True, path=dest)
         def work(log):
-            if zen:
-                return _pack_zen(P, dest, files, zen, log)
+            if zen or legacy:
+                return _pack_zen(P, dest, files, zen, log, legacy)
             if not b.get("force") and P.paks and P.game == "gp24":
                 log("Crash check before packing...")
                 block, warn, n = _crash_scan(P, log)
@@ -325,15 +330,43 @@ def make_api(S):
                 raise
             return dict(path=dest, files=n, bytes=size, summary="%s (%d files, %.1f MB)" % (dest, n, size / 1048576))
         _job_start("Packing", work)
-        return dict(started=True, path=dest, files=len(files) + len(zen))
+        return dict(started=True, path=dest, files=len(files) + len(zen) + len(legacy))
 
-    def _pack_zen(P, dest, files, zen, log):
+    def _pack_zen(P, dest, files, zen, log, legacy=()):
         """MotoGP 25: zen .uassets into <name>.utoc/.ucas (uncompressed, like retoc), other files into <name>.pak
-        (an empty one when there are none: the game mounts the .utoc through the .pak)."""
+        (an empty one when there are none: the game mounts the .utoc through the .pak). Legacy assets
+        (.uasset + .uexp) are converted with retoc first and their zen packages go into the same container."""
         import mgp_iostore as IO, mgp_zen as Z
         pk, bulk = [], []
-        for name, path in zen:
-            data = open(path, "rb").read()
+        if legacy:
+            exe = MR.find(S.load_cfg().get("retoc", ""))
+            log("Converting %d legacy file(s) to zen with retoc (%s)..." % (len(legacy), exe or "not found"))
+            tmp = None
+            try:
+                tmp, utoc = MR.to_zen(exe, P.project, {n.split("/", 1)[1]: p for n, p in legacy}, P.game, log)
+                toc = IO.Toc(utoc)
+                try:
+                    for low, (full, e) in sorted(toc.files.items(), key=lambda kv: kv[1][1].idx):
+                        if "/Content/" not in full:
+                            continue
+                        name = P.project + "/Content/" + full.split("/Content/", 1)[1]
+                        data = toc.read_index(e.idx)
+                        if name.lower().endswith(".uasset"):
+                            zen.append((name, None, data))
+                        elif name.lower().endswith(".ubulk") and not name.lower().endswith(".m.ubulk"):
+                            zen.append((name, None, data))
+                        else:
+                            raise C.MgpError("retoc made a %s file (%s), which can't be packed yet" % (name.rsplit(".", 1)[-1], name.rsplit("/", 1)[-1]))
+                finally:
+                    toc.close()
+            except MR.RetocError as e:
+                raise C.MgpError(str(e))
+            finally:
+                if tmp:
+                    shutil.rmtree(tmp, ignore_errors=True)
+        for item in zen:
+            name, path = item[0], item[1]
+            data = item[2] if len(item) > 2 else open(path, "rb").read()
             if name.lower().endswith(".ubulk"):
                 bulk.append((name, data, "/Game/" + name.split("/", 2)[2][:-len(".ubulk")]))
                 continue
@@ -428,6 +461,8 @@ def make_api(S):
         rel = C.game_to_rel(C.normalize_target(pkg)) + ".uasset"
         ue = rel[:-7] + ".uexp"
         zen = P.game != "gp24"                                  # MotoGP 25: one zen .uasset, no .uexp
+        if zen:
+            P.no_legacy(rel[:-7])
         if not P.src.exists(rel) or not (zen or P.src.exists(ue)):
             raise C.MgpError("projector file not found: %s" % pkg)
         try:
@@ -727,10 +762,22 @@ def make_api(S):
         return dict(dir=d, dirs=[dict(name=k, count=v) for k, v in sorted(dirs.items(), key=lambda x: x[0].lower())],
                     items=out, truncated=len(items) > len(out), total_files=len(files))
 
+    def _legacy_from_game(P, stems, log=None):
+        """MotoGP 25: the game's zen packages `stems` as legacy files (retoc to-legacy) -> (tmp dir, {rel: path})."""
+        key = P.paks.key
+        hexkey = ("0x" + key.hex()) if isinstance(key, (bytes, bytearray)) and key else ""
+        try:
+            return MR.to_legacy(MR.find(S.load_cfg().get("retoc", "")), P.paks.paks_dir, hexkey, stems, log)
+        except MR.RetocError as e:
+            raise C.MgpError(str(e))
+
     def browse_extract(q, b):
-        """overwrite: None = ask (nothing is written if something already exists), 'replace' or 'skip'."""
+        """overwrite: None = ask (nothing is written if something already exists), 'replace' or 'skip'.
+        MotoGP 25: assets come out as legacy .uasset/.uexp (converted with retoc) so UAssetGUI can open them."""
         P = S.need()
         mode = b.get("overwrite")
+        if P.game != "gp24":
+            return _extract_legacy(P, b.get("bases") or [], mode)
         todo, exists = [], []
         for base in b.get("bases") or []:
             if ".." in base or not base.startswith("Content/"):
@@ -754,6 +801,48 @@ def make_api(S):
                 f.write(data)
             made.append(r)
         return dict(files=made, exists=exists, skipped=0 if mode == "replace" else len(exists))
+
+    def _extract_legacy(P, bases, mode):
+        for base in bases:
+            if ".." in base or not base.startswith("Content/"):
+                raise C.MgpError("bad path: " + base)
+        if not P.paks:
+            raise C.MgpError("set the game's Paks folder in Setup to extract assets")
+        assets = [x for x in bases if P.paks.exists(x + ".uasset")]
+        plain = [x for x in bases if x not in assets and P.paks.exists(x)]   # non-assets (locres, db ...) as they are
+        dst_of = lambda r: os.path.join(P.real_root, *r.split("/"))
+        exists = [x + e for x in assets for e in C.SIDECARS if os.path.exists(dst_of(x + e))] + [x for x in plain if os.path.exists(dst_of(x))]
+        if exists and mode is None:
+            return dict(files=[], exists=exists, asked=True)
+        if mode != "replace":
+            assets = [x for x in assets if not any(os.path.exists(dst_of(x + e)) for e in C.SIDECARS)]
+            plain = [x for x in plain if not os.path.exists(dst_of(x))]
+        made, tmp = [], None
+        try:
+            got = {}
+            if assets:
+                tmp, got = _legacy_from_game(P, assets)
+                missing = [x.rsplit("/", 1)[-1] for x in assets if x + ".uasset" not in got]
+                if missing:
+                    raise C.MgpError("retoc did not convert: " + ", ".join(missing[:8]))
+            for x in assets:                                     # drop an older zen/legacy copy first
+                for e in C.SIDECARS:
+                    if os.path.exists(dst_of(x + e)):
+                        P.backup(dst_of(x + e)); os.remove(dst_of(x + e))
+            for r, path in sorted(got.items()):
+                os.makedirs(os.path.dirname(dst_of(r)), exist_ok=True)
+                shutil.copyfile(path, dst_of(r)); made.append(r)
+            for r in plain:
+                if os.path.exists(dst_of(r)):
+                    P.backup(dst_of(r))
+                os.makedirs(os.path.dirname(dst_of(r)), exist_ok=True)
+                with open(dst_of(r), "wb") as f:
+                    f.write(P.paks.read(r))
+                made.append(r)
+        finally:
+            if tmp:
+                shutil.rmtree(tmp, ignore_errors=True)
+        return dict(files=made, exists=exists, skipped=0 if mode == "replace" else len(exists), legacy=bool(assets))
 
     def browse_clone(q, b):
         P = S.need()
@@ -1752,6 +1841,22 @@ def make_api(S):
         rels = [stem + e for e in C.SIDECARS if P.src.exists(stem + e)]
         if stem + ".uasset" not in rels:
             raise C.MgpError("asset not found in mod folder or paks: " + b["pkg"])
+        if P.game != "gp24" and stem + ".uexp" not in rels:      # zen: UAssetGUI needs a legacy copy (retoc)
+            if P.src.origin(stem + ".uasset") in ("mod folder", "unsaved"):
+                raise C.MgpError("%s in the mod folder is a zen file (e.g. saved by this tool), which UAssetGUI can't open. "
+                                 "Use Browse -> Extract to replace it with a legacy copy of the game's file "
+                                 "(this drops the tool's edits to it)" % stem.rsplit("/", 1)[-1])
+            tmp, got = _legacy_from_game(P, [stem])
+            try:
+                if stem + ".uasset" not in got:
+                    raise C.MgpError("retoc did not convert " + stem.rsplit("/", 1)[-1])
+                for r, path in got.items():
+                    dst = P.src.loose(r)
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.copyfile(path, dst)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+            rels = []
         for r in rels:
             dst = P.src.loose(r)
             if not os.path.exists(dst):
@@ -1780,8 +1885,10 @@ def make_api(S):
             cfg["uassetgui"] = str(b["uassetgui"]).strip().strip('"')
         if "game" in b:
             cfg[gk("game", g)] = str(b["game"]).strip().strip('"')
+        if "retoc" in b:
+            cfg["retoc"] = str(b["retoc"]).strip().strip('"')
         S.save_cfg(cfg)
-        return dict(uassetgui=cfg.get("uassetgui", ""), game=cfg.get(gk("game", g), ""))
+        return dict(uassetgui=cfg.get("uassetgui", ""), game=cfg.get(gk("game", g), ""), retoc=cfg.get("retoc", ""), retoc_found=MR.find(cfg.get("retoc", "")))
 
     def _lnk_target(path):
         """(target, arguments, working dir) of a Windows .lnk shortcut."""

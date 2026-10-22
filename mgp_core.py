@@ -680,6 +680,7 @@ class Project:
         if rel not in self._tables:
             if self.game != "gp24":                  # zen package: one .uasset, no .uexp
                 import mgp_zen
+                self.no_legacy(rel)
                 try:
                     self._tables[rel] = mgp_zen.ZenBindingTable(self.src.read(rel + ".uasset"))
                 except mgp_zen.ZenError as e:
@@ -687,6 +688,12 @@ class Project:
             else:
                 self._tables[rel] = BindingTable(self.src.read(rel + ".uasset"), self.src.read(rel + ".uexp"))
         return self._tables[rel]
+
+    def no_legacy(self, stem):
+        """MotoGP 25: a .uasset + .uexp in the mod folder is a legacy copy (extracted for UAssetGUI); the tool reads zen only."""
+        if self.src.exists(stem + ".uexp") and self.src.origin(stem + ".uexp") in ("mod folder", "unsaved"):
+            raise MgpError("%s in the mod folder is a legacy copy (for UAssetGUI) - edit it there, or delete its "
+                           ".uasset/.uexp to edit it in this tool. Pack mod converts it back to zen." % stem.rsplit("/", 1)[-1])
 
     def table_names(self):
         if self._names is None:
@@ -719,6 +726,7 @@ class Project:
     def style(self):
         if self._style is None and self.game != "gp24":         # zen package: one .uasset
             import mgp_zen
+            self.no_legacy(STYLE_REL)
             try:
                 self._style = mgp_zen.ZenStyleTable(self.src.read(STYLE_REL + ".uasset"))
             except mgp_zen.ZenError as e:

@@ -191,6 +191,8 @@ dialog input[type=text]{width:100%;padding:8px}
       <input type="password" id="s_key" placeholder="0x…">
       <label>UAssetGUI.exe (optional, used by "Edit…"; leave empty to open .uasset files with your Windows default app)</label>
       <div class="pathrow"><input type="text" id="s_gui" placeholder="C:\Tools\UAssetGUI\UAssetGUI.exe"><button class="b" data-pick="s_gui" data-kind="file">Browse</button><button class="b" data-reveal="s_gui">Open in Explorer</button></div>
+      <label>retoc.exe (MotoGP 25: Extract/Edit… convert zen assets to legacy for UAssetGUI, Pack mod converts them back; leave empty to use retoc.exe next to the tool) <span id="s_retocinfo" class="help"></span></label>
+      <div class="pathrow"><input type="text" id="s_retoc" placeholder="C:\Tools\retoc\retoc.exe"><button class="b" data-pick="s_retoc" data-kind="file">Browse</button><button class="b" data-reveal="s_retoc">Open in Explorer</button></div>
       <label>Game (.exe, or a shortcut to it: .lnk / Steam .url) - used by "Launch game"</label>
       <div class="pathrow"><input type="text" id="s_game" placeholder="F:\SteamLibrary\steamapps\common\MotoGP24\MotoGP24.exe  or  C:\Users\you\Desktop\MotoGP24.lnk"><button class="b" data-pick="s_game" data-kind="game">Browse</button><button class="b" data-reveal="s_game">Open in Explorer</button></div>
       <div class="bar"><button class="b" id="s_guisave">Save these paths</button></div>
@@ -554,8 +556,8 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v102";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
-  $("#s_gui").value=ST.uassetgui||"";$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v103";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  $("#s_gui").value=ST.uassetgui||"";$("#s_retoc").value=ST.retoc||"";retocInfo();$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const g=ST.game_id||"gp24",keep=["riders","check","browse","loc","db","setup"];$("#s_gameid").value=g;$$("nav button").forEach(b=>b.style.display=(g==="gp24"||keep.includes(b.dataset.t))?"":"none");if(g!=="gp24"&&!keep.includes(($$("nav button.on")[0]||{}).dataset?.t))tab(ST.open?"riders":"setup")}
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}
   if(ST.open){await loadPilots();const n=await refreshChanges();if(n&&!recoveryAsked){recoveryAsked=true;recoverDlg(n)}}else tab("setup");
@@ -581,7 +583,7 @@ $("#b_exit").onclick=async()=>{await refreshChanges();
 window.addEventListener("beforeunload",e=>{if(dirtyN&&!quitting){e.preventDefault();e.returnValue=""}});
 document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="s"){e.preventDefault();if(dirtyN)doSave()}});
 $("#s_gameid").onchange=()=>{const v=(ST.games||{})[$("#s_gameid").value]||{};$("#s_mod").value=v.mod_folder||"";$("#s_paks").value=v.paks_dir||"";$("#s_patch").checked=v.include_patch!==false;$("#s_game").value=v.game||"";$("#s_key").value=""};
-$("#s_guisave").onclick=guard(async()=>{const r=await api("/api/settings",{game_id:$("#s_gameid").value,uassetgui:$("#s_gui").value,game:$("#s_game").value});if((ST.games||{})[$("#s_gameid").value])ST.games[$("#s_gameid").value].game=r.game;if($("#s_gameid").value===ST.game_id)ST.game=r.game;ST.game=r.game;ST.uassetgui=r.uassetgui;$("#b_launch").disabled=!ST.game;toast("Saved","ok")});
+$("#s_guisave").onclick=guard(async()=>{const r=await api("/api/settings",{game_id:$("#s_gameid").value,uassetgui:$("#s_gui").value,game:$("#s_game").value,retoc:$("#s_retoc").value});ST.retoc=r.retoc;ST.retoc_found=r.retoc_found;retocInfo();if((ST.games||{})[$("#s_gameid").value])ST.games[$("#s_gameid").value].game=r.game;if($("#s_gameid").value===ST.game_id)ST.game=r.game;ST.game=r.game;ST.uassetgui=r.uassetgui;$("#b_launch").disabled=!ST.game;toast("Saved","ok")});
 $("#b_launch").onclick=guard(async()=>{await api("/api/launch",{});toast(dirtyN?"Game started - "+dirtyN+" unsaved change(s) are not in the game":"Game started","ok")});
 $("#s_go").onclick=guard(async()=>{
   ST=await api("/api/open",{game_id:$("#s_gameid").value,mod_folder:$("#s_mod").value,paks_dir:$("#s_paks").value,aes_key:$("#s_key").value,include_patch:$("#s_patch").checked});$("#b_launch").disabled=!ST.game;
@@ -740,6 +742,7 @@ async function cloneRowDlg(rel){
   $("#cl_name").oninput=()=>{edited=true;name=$("#cl_name").value.trim();clearTimeout(window._ct);window._ct=setTimeout(refresh,250)};
   show(first.mode===mode?first:await call(true));
 }
+function retocInfo(){const e=$("#s_retocinfo");if(e)e.textContent=ST.retoc_found?"(using "+ST.retoc_found+")":"(not found)"}
 let projR=null,projFiles=null;
 function projHtml(){
   if(!projR)return"";
