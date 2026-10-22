@@ -1,6 +1,6 @@
 """Read-only Unreal Engine .pak reader (versions 3-11) for the MotoGP 24 Master Editor.
 
-Supports: AES-256 (ECB) encrypted index and entries, zlib block compression, the v10/v11
+Supports: AES-256 (ECB) encrypted index and entries, zlib and Oodle (via mgp_oodle) block compression, the v10/v11
 full-directory index with encoded entries, and the old flat index (v3-v9, e.g. the v4 mod pak).
 Needs the AES key (hex) and, for encrypted paks, `pip install pycryptodome` (or `cryptography`).
 """
@@ -224,15 +224,23 @@ class PakReader:
                 raw = _aes_decrypt(self.key, raw)
             return raw[:e.usize]
         name = self.comp[e.method - 1] if e.method - 1 < len(self.comp) else "?"
-        if name.lower() != "zlib":
+        if name.lower() not in ("zlib", "oodle"):
             raise PakError("unsupported compression '%s' in %s" % (name, os.path.basename(self.path)))
         out = []
-        for s, t in e.blocks:
+        for i, (s, t) in enumerate(e.blocks):
             f.seek(e.offset + s if self.version >= 5 else s)
             raw = f.read(_align16(t - s) if e.encrypted else t - s)
             if e.encrypted:
                 raw = _aes_decrypt(self.key, raw)
-            out.append(zlib.decompress(raw[:t - s]))
+            if name.lower() == "zlib":
+                out.append(zlib.decompress(raw[:t - s]))
+                continue
+            import mgp_oodle                                 # MotoGP 25+: needs the oo2core DLL (Windows)
+            bs = e.bsize or e.usize
+            try:
+                out.append(mgp_oodle.decompress(raw[:t - s], min(bs, e.usize - i * bs), [os.path.dirname(self.path)]))
+            except (OSError, ValueError) as x:
+                raise PakError("%s (%s)" % (x, os.path.basename(self.path)))
         return b"".join(out)[:e.usize]
 
     def close(self):
