@@ -12,7 +12,7 @@ import mgp_core as C
 import uprops as U
 import audioport as AP
 
-VERSION = "v96"
+VERSION = "v97"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -270,9 +270,13 @@ def make_api(S):
         if P.game != "gp24":                         # zen assets load only from a .utoc/.ucas next to the .pak
             zen = [f for f in files if f[0].lower().endswith((".uasset", ".ubulk", ".umap", ".uptnl"))]
             files = [f for f in files if f not in zen]
-            other = [n for n, _ in zen if not n.lower().endswith(".uasset")]
+            other = [n for n, _ in zen if not n.lower().endswith((".uasset", ".ubulk")) or n.lower().endswith(".m.ubulk")]
             if other:
-                raise C.MgpError("MotoGP 25: only .uasset files can be packed so far, not: " + ", ".join(o.rsplit("/", 1)[-1] for o in other[:5]))
+                raise C.MgpError("MotoGP 25: only .uasset and .ubulk files can be packed so far, not: " + ", ".join(o.rsplit("/", 1)[-1] for o in other[:5]))
+            stems = {n.lower()[:-7] for n, _ in zen if n.lower().endswith(".uasset")}
+            lone = [n for n, _ in zen if n.lower().endswith(".ubulk") and n.lower()[:-6] not in stems]
+            if lone:
+                raise C.MgpError("a .ubulk needs its .uasset next to it in the mod folder: " + ", ".join(o.rsplit("/", 1)[-1] for o in lone[:5]))
         if not files and not zen:
             raise C.MgpError("the mod folder has no Content folder with files in it")
         dest = os.path.join(out, name + ".pak")
@@ -305,9 +309,12 @@ def make_api(S):
         """MotoGP 25: zen .uassets into <name>.utoc/.ucas (uncompressed, like retoc), other files into <name>.pak
         (an empty one when there are none: the game mounts the .utoc through the .pak)."""
         import mgp_iostore as IO, mgp_zen as Z
-        pk = []
+        pk, bulk = [], []
         for name, path in zen:
             data = open(path, "rb").read()
+            if name.lower().endswith(".ubulk"):
+                bulk.append((name, data, "/Game/" + name.split("/", 2)[2][:-len(".ubulk")]))
+                continue
             try:
                 z = Z.ZenPackage(data)
             except Z.ZenError as e:
@@ -317,7 +324,7 @@ def make_api(S):
         utoc = dest[:-4] + ".utoc"
         log("Writing %d asset(s) -> %s (+ .ucas)" % (len(pk), utoc))
         try:
-            IO.write_container(utoc, pk, log=log)
+            IO.write_container(utoc, pk, log=log, bulk=bulk)
             if files:
                 n, size = PW.write_pak(dest, files, log)
             else:
@@ -325,8 +332,8 @@ def make_api(S):
         except PermissionError:
             raise C.MgpError("cannot write %s - is the game running or the file in use? Close it and try again" % dest)
         total = sum(os.path.getsize(dest[:-4] + e) for e in (".pak", ".utoc", ".ucas"))
-        return dict(path=dest, files=n + len(pk), bytes=total,
-                    summary="%s + .utoc/.ucas (%d assets, %d other files, %.1f MB)" % (dest, len(pk), n, total / 1048576))
+        return dict(path=dest, files=n + len(pk) + len(bulk), bytes=total,
+                    summary="%s + .utoc/.ucas (%d assets, %d .ubulk, %d other files, %.1f MB)" % (dest, len(pk), len(bulk), n, total / 1048576))
 
     def pak_status(q, b):
         job = getattr(S, "pakjob", None)

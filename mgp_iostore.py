@@ -7,7 +7,7 @@ import os, struct
 
 TOC_MAGIC = b"-==--==--==--==-"
 F_COMPRESSED, F_ENCRYPTED, F_SIGNED, F_INDEXED = 1, 2, 4, 8
-CHUNK_EXPORT_BUNDLE_DATA = 1
+CHUNK_EXPORT_BUNDLE_DATA, CHUNK_BULK_DATA = 1, 2
 
 
 class IoStoreError(Exception):
@@ -247,6 +247,11 @@ def _b3_compress(cv, m, counter, blen, flags):
 
 def blake3(data, size=32):
     """BLAKE3 hash (default mode) of bytes; pure Python, fine for small files."""
+    try:
+        import blake3 as _b3                   # the pip module is much faster, when it is installed
+        return _b3.blake3(data).digest()[:size]
+    except ImportError:
+        pass
     START, END, PARENT, ROOT = 1, 2, 4, 8
     words = lambda b: struct.unpack("<16I", b.ljust(64, b"\0"))
     def chunk_out(i):                    # (cv, block words, counter, block len, flags) of chunk i's last block
@@ -313,9 +318,11 @@ def _dir_index(paths, mount="../../../"):
     return bytes(out)
 
 
-def write_container(utoc_path, packages, container_id=None, log=None):
+def write_container(utoc_path, packages, container_id=None, log=None, bulk=()):
     """Write an uncompressed, unencrypted .utoc/.ucas (as retoc does) holding zen packages.
-    packages: [(path 'motogp25/Content/.../X.uasset', zen bytes, '/Game/.../X', [imported package ids])]."""
+    packages: [(path 'motogp25/Content/.../X.uasset', zen bytes, '/Game/.../X', [imported package ids])].
+    bulk: [(path '.../X.ubulk', bytes, '/Game/.../X')] - a BulkData chunk with the package's id (as the game's
+    own containers store .ubulk files)."""
     import hashlib
     log = log or (lambda s: None)
     BS = 65536
@@ -335,6 +342,7 @@ def write_container(utoc_path, packages, container_id=None, log=None):
     ch = struct.pack("<IIQ", 0x496F436E, 4, cid) + struct.pack("<I", len(ids)) + b"".join(struct.pack("<Q", x) for x in ids)
     ch += struct.pack("<I", len(blob)) + blob + bytes(24)
     chunks = [(struct.pack("<QHBB", package_id(g), 0, 0, CHUNK_EXPORT_BUNDLE_DATA), data, path) for path, data, g, _ in packages]
+    chunks += [(struct.pack("<QHBB", package_id(g), 0, 0, CHUNK_BULK_DATA), data, path) for path, data, g in bulk]
     chunks.append((struct.pack("<QHBB", cid, 0, 0, 6), ch, None))
     offlen, blocks, metas = [], [], []
     tmp = utoc_path[:-5] + ".ucas.tmp"
