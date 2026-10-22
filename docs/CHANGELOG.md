@@ -1,5 +1,6 @@
 # Changelog (versions shipped as zips; bump `VERSION` in webui.py AND `HV` in webui.html)
 
+- **v94** Oodle: also loads FModel's `oodle-data-shared.dll` (Faizal's FModel only has that one).
 - **v93** Oodle-compressed paks (GP25): `mgp_oodle.py` loads `oo2core_*_win64.dll` with ctypes (searched next to the tool/exe, below the game folder, FModel folders, or env MGP_OODLE_DLL). Not testable offline (Linux, no DLL). GP25: after Open the tool went to the hidden Riders tab (blank page); it now opens Localization.
 - **v92** Setup: **Game** picker (MotoGP 24 / MotoGP 25). GP25 (UE5.5, IoStore) is a test mode: only Localization and Database are shown, since `.locres`/`db.sqlite3` stay in its legacy .pak; its .uassets (bindings etc.) are zen packages in .utoc/.ucas and are not read yet. Paths use `motogp25/`, packing skips the crash check, each game keeps its own saved AES key (GP25 default built in). Untested in game: whether GP25 loads a plain v8 `_P.pak` without .utoc/.ucas.
 - **v91** Font swap Browse: the file dialog filters fonts (.ttf/.otf/.ufont, kind "font") instead of programs (.exe).

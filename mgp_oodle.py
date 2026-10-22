@@ -1,4 +1,5 @@
-"""Oodle decompression for MotoGP 25+ paks, through the game's/FModel's own oo2core DLL (Windows only).
+"""Oodle decompression for MotoGP 25+ paks, through an Oodle DLL (Windows only): oo2core_*_win64.dll or
+FModel's oodle-data-shared.dll.
 
 Oodle is closed source, so there is no Python decoder: the DLL `oo2core_*_win64.dll` is loaded with ctypes.
 It is searched next to the tool, below the game folder, and in FModel's folders (FModel downloads it)."""
@@ -26,9 +27,10 @@ def _candidates(hint_dirs):
         if base:
             pats += [os.path.join(base, "FModel", "oo2core_*_win64.dll"), os.path.join(base, "FModel", "*", "oo2core_*_win64.dll"),
                      os.path.join(base, "FModel", "Output", ".data", "oo2core_*_win64.dll")]
-    for p in pats:
-        for f in sorted(glob.glob(p), reverse=True):
-            yield f
+    for p in pats:                                         # FModel now ships Epic's oodle-data-shared.dll (same API)
+        for q in (p, p.replace("oo2core_*_win64.dll", "oodle-data-shared.dll")):
+            for f in sorted(glob.glob(q), reverse=True):
+                yield f
 
 
 def load(hint_dirs=()):
@@ -49,8 +51,8 @@ def load(hint_dirs=()):
                        ctypes.c_void_p, ctypes.c_int64, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64, ctypes.c_int]
         _dll = lib
         return lib
-    raise OSError("Oodle DLL (oo2core_9_win64.dll) not found. Copy it next to the tool (FModel has one, "
-                  "search your PC for oo2core) and start the tool again.")
+    raise OSError("Oodle DLL not found (oodle-data-shared.dll or oo2core_9_win64.dll). Copy it next to the tool "
+                  "(FModel has one) and start the tool again.")
 
 
 def decompress(data, raw_size, hint_dirs=()):
