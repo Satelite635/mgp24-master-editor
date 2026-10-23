@@ -9,6 +9,7 @@ Workflow: tool opens a **mod folder** (loose `Content/...` files) layered over t
 - Riders & bindings: replace / copy look / clone entries; edit assets via UAssetGUI; clone audit.
 - Check tab: bindings check, team sync, clone audit.
 - Port audio: copy a bike's Wwise bank + events + BikeAudio from another game (Wwise bank v140). Has **Gain dB** (v55): GP24 containers sit +3..+9 dB, SBK at 0, so ported bikes sound quieter; +6 was the suggested start (untested by the user).
+- Bike sounds from MotoGP 26 (v104, Port audio tab): GP26 bike banks swapped into GP24's bank of the same name (sounds, REV engine models converted v7→v6, REV settings). Method reverse-engineered from a friend's working banks; Ducati result tested in game OK.
 - Browse (FModel-lite), Localization (.locres), Replacement sheet (CSV in/out), Database editor (sqlite from paks), Setup.
 - Pack mod / Launch game; background jobs with toast + "View log".
 - **HUD skin tab** (the most active area — see below):
