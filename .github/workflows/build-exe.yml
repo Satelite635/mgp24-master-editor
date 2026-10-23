@@ -1,0 +1,42 @@
+# Builds the Windows .exe and the release zip. Download it from the run's "Artifacts" section.
+name: Build exe
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyinstaller pycryptodome blake3
+      - run: python build_exe.py
+      - name: Smoke test (serves the page)
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\MGP24MasterEditor.exe -ArgumentList "web","8799" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
+            Start-Sleep 1
+            try { $r = Invoke-WebRequest http://127.0.0.1:8799/ -UseBasicParsing; $ok = $r.Content -match 'HV="v' } catch {}
+          }
+          Stop-Process $p -Force
+          if (-not $ok) { throw "exe did not serve the page" }
+      - name: Release zip
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path webui.py -Pattern 'VERSION = "(v\d+)"').Matches[0].Groups[1].Value
+          New-Item -ItemType Directory rel\mgp_projectors | Out-Null
+          Copy-Item -Recurse blender_addon\mgp_projectors\* rel\mgp_projectors\
+          Copy-Item uprops.py,mgp_core.py,projfile.py rel\mgp_projectors\
+          Get-ChildItem rel -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
+          Compress-Archive rel\mgp_projectors rel\mgp24_projectors_addon.zip
+          Remove-Item -Recurse rel\mgp_projectors
+          Copy-Item dist\MGP24MasterEditor.exe,README.txt rel\
+          echo "VER=$v" >> $env:GITHUB_ENV
+      - uses: actions/upload-artifact@v4
+        with:
+          name: motogp_master_editor_${{ env.VER }}_exe
+          path: rel/

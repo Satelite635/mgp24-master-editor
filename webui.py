@@ -13,7 +13,7 @@ import uprops as U
 import audioport as AP
 import bnkport as BP
 
-VERSION = "v104"
+VERSION = "v105"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -21,7 +21,7 @@ import projfile as PJ
 import mgp_retoc as MR
 import fontswap as FS
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))   # _MEIPASS: inside the .exe
 PER_GAME = ("mod_folder", "paks_dir", "include_patch", "game")       # Setup fields each game keeps for itself
 
 

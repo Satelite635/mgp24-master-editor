@@ -5,3 +5,6 @@ node_modules/
 _mgp_backup/
 _mgp_pak/
 *.zip
+build/
+dist/
+*.spec

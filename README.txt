@@ -1,9 +1,12 @@
 MGP24 Master Editor
 =======================
-Setup (once):   pip install pycryptodome
+Easiest:        double-click MGP24MasterEditor.exe (no Python needed; Python + pycryptodome are inside it).
+                It opens a console window (keep it open while you use the tool) and the editor in your browser.
+                mgp_config.json is saved next to the exe. If Windows SmartScreen/antivirus warns about it, that's
+                a common false positive for PyInstaller exes ("More info" -> "Run anyway").
+From source:    pip install pycryptodome, then double-click start.bat
 Check the pak reader on your game (do this first):
     python motogp_master_editor.py selftest --paks "F:\SteamLibrary\steamapps\common\MotoGP24\motogp24\Content\Paks"
-Easiest:        double-click start.bat
 Web UI:         python motogp_master_editor.py        (opens http://127.0.0.1:8765 in your browser)
                 Tabs: Riders & bindings (replace / copy look / clone), Database (click a cell to edit),
                 Setup (mod folder, Paks folder, AES key). Old tkinter window: python motogp_master_editor.py gui

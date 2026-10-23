@@ -22,7 +22,9 @@ import argparse, json, os, sys, tempfile
 
 import mgp_core as C
 
-CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mgp_config.json")
+# next to the .exe when frozen (PyInstaller), else next to this script
+APP_DIR = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+CONFIG = os.path.join(APP_DIR, "mgp_config.json")
 DEFAULT_KEY = "0xDAA05A8D0A1E1948431E91FDB2004A775B209CEDF7FEF3C9B1E1EB4579099839"
 
 
@@ -494,4 +496,14 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    if not getattr(sys, "frozen", False):
+        sys.exit(main())
+    try:                                    # .exe: keep the window open on exit/crash, like start.bat's pause
+        rc = main()
+    except SystemExit as e:
+        rc = e.code
+    except BaseException:
+        import traceback; traceback.print_exc(); rc = 1
+    if len(sys.argv) == 1:
+        input("\nPress Enter to close...")
+    sys.exit(rc)
