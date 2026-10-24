@@ -18,4 +18,5 @@ Parse the result with `uprops.Asset(ua, ux)` and `parse_export(i)` for every exp
 ## Fixtures I used (not in repo — recreate)
 GP24 originals of `RaceHud_BP`/`HUDRacePage` (supplied by user), SBK versions imported, `PenaltyTime`, `TimedSessionPenaltiesInfoWidgetManagerBP`, `MotoGPText_Regular` (Font), `F_TTSupermolotNeue-Regular_Mono_Font`. Ask Faizal to re-upload if needed.
 
+- `python test_bnkport.py <GP24 bank> <GP26 bank> [expected]` - GP26 bank import (samples: project files `gp26-audio-test/`).
 - `python test_zen.py <folder with GP25 DT_Bike*.uasset> [retoc-made .utoc]` - MotoGP 25 zen tables + IoStore writer (samples: project files `gp25-samples/`).

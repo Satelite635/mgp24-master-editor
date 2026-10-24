@@ -94,6 +94,14 @@ dialog input[type=text]{width:100%;padding:8px}
       <div class="bar" id="au_bar" style="display:none"><label class="help" title="Added to the top-level Volume of each ported bank. GP24 banks run ~+3..+9 dB hotter than SBK ones.">Gain dB <input id="au_gain" type="number" step="1" value="0" style="width:60px;padding:5px"></label><button class="b" id="au_check">Check</button><button class="b p" id="au_go">Port selected</button></div>
       <div id="au_res"></div>
     </div>
+    <div class="pane">
+      <h2>Bike sounds from MotoGP 26 (newer Wwise)</h2>
+      <div class="help" style="margin:0 0 10px">Point this at a folder with MotoGP 26 bike banks (e.g. <span class="mono">MotoGP_Ducati.bnk</span>, exported raw with FModel). Each is matched to this game's bank of the same name: the game's bank stays (events, mix, RPM curves) and the newer game's sounds, engine models (converted to this game's REV format) and engine settings are swapped in. Sounds only the newer game has are not used. Files are staged like other edits (Save, then Pack mod).</div>
+      <div class="bar"><input id="bk_root" placeholder="C:\\path\\to\\gp26\\banks" style="flex:1;padding:7px"><button class="b" data-pick="bk_root" data-kind="folder">Browse</button><button class="b" data-reveal="bk_root">Open in Explorer</button><button class="b p" id="bk_scan">Scan</button><span id="bk_sum" class="tag"></span></div>
+      <div id="bk_out"></div>
+      <div class="bar" id="bk_bar" style="display:none"><button class="b" id="bk_check">Check</button><button class="b p" id="bk_go">Import selected</button></div>
+      <div id="bk_res"></div>
+    </div>
   </section>
   <section id="hud">
     <div class="pane">
@@ -513,6 +521,23 @@ const auRun=dry=>guard(async()=>{
   $("#au_res").innerHTML=h;
 });
 $("#au_scan").onclick=auScan;$("#au_check").onclick=auRun(true);$("#au_go").onclick=auRun(false);
+// ---- bike banks from a newer Wwise game
+const bkScan=guard(async()=>{
+  const r=await api("/api/bank/scan?root="+encodeURIComponent($("#bk_root").value));
+  $("#bk_sum").textContent=r.banks.length+" banks";
+  $("#bk_out").innerHTML=r.banks.length?`<table class="mono" style="margin:10px 0"><tr><th></th><th>Bank</th><th>Wwise</th><th>Sounds</th><th>Engine models</th><th>This game</th></tr>`+r.banks.map(b=>`<tr><td><input type="checkbox" class="bk_c" value="${esc(b.name)}" ${b.target&&!b.error&&b.shared?"checked":""}></td><td>${esc(b.name)}</td><td>${b.version||"?"}</td><td>${b.media??"?"}</td><td>${b.engine??"?"}</td><td>${b.error?`<b>${esc(b.error)}</b>`:b.target?(b.shared+" in common"):"<b>no bank of that name</b>"}</td></tr>`).join("")+"</table>":"<div class='help'>No .bnk files found.</div>";
+  $("#bk_bar").style.display=r.banks.length?"":"none";$("#bk_res").innerHTML="";
+});
+const bkRun=dry=>guard(async()=>{
+  const banks=$$(".bk_c:checked").map(c=>c.value);if(!banks.length)throw new Error("tick at least one bank");
+  const r=await api("/api/bank/port",{root:$("#bk_root").value,banks,dry_run:dry});
+  let h=`<h2 style="margin-top:20px">${dry?"Check":"Imported"}</h2>`;
+  h+=r.results.map(x=>`<div style="margin:8px 0"><b>${esc(x.bank)}</b> ${x.ok?"<span class='tag'>OK</span>":"<span class='tag' style='color:#c33'>skipped</span>"}`+
+    (x.problems||[]).map(p=>`<div style="color:#c33">✗ ${esc(p)}</div>`).join("")+(x.warnings||[]).map(p=>`<div>⚠ ${esc(p)}</div>`).join("")+(x.actions||[]).map(p=>`<div class="help">• ${esc(p)}</div>`).join("")+"</div>").join("");
+  if(!dry)h+=`<div class="help">${r.written} banks staged - press Save to write them.</div>`;
+  $("#bk_res").innerHTML=h;
+});
+$("#bk_scan").onclick=bkScan;$("#bk_check").onclick=bkRun(true);$("#bk_go").onclick=bkRun(false);
 
 // ---- check
 const fillTeam=guard(async()=>{const r=await api("/api/teamsync?table=");$("#t_table").innerHTML=r.names.map(n=>`<option ${n.includes("WinterTest")?"selected":""}>${esc(n)}</option>`).join("")});
@@ -556,7 +581,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v103";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v105";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_retoc").value=ST.retoc||"";retocInfo();$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const g=ST.game_id||"gp24",keep=["riders","check","browse","loc","db","setup"];$("#s_gameid").value=g;$$("nav button").forEach(b=>b.style.display=(g==="gp24"||keep.includes(b.dataset.t))?"":"none");if(g!=="gp24"&&!keep.includes(($$("nav button.on")[0]||{}).dataset?.t))tab(ST.open?"riders":"setup")}
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}

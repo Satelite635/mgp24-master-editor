@@ -15,6 +15,7 @@ Paths are project-relative: `Content/assets/ui/Pages/HUD/RaceHud_BP.uasset`.
 - **uprops.Asset(ua_bytes, ux_bytes)**: parse imports/exports and `.uexp` tagged properties (`parse_export(i)`); `uexp` may be `b""` when only imports/exports are needed (used for donors and font lists).
 - **hudskin**: `widgets/compare/apply` (skin), `visibility_list/set_visibility`, `retype_widget`, `swap_widget_types`, `font_faces/font_weight/retarget_font`, `WARN_NAMES` regex `penal|warn|longlap|long_lap`.
 - **audioport**: `port(P, path, bike_names, dry_run, gain)`; Wwise bank rewrite incl. `apply_gain`.
+- **bnkport**: `scan(P, folder)`, `port(P, folder, bank_names, dry_run)`, `port_bank(game_bank, gp26_bank)`; GP26 (Wwise v154) bike banks into the game's own bank of the same name (`/api/bank/scan`, `/api/bank/port`).
 - **mgp_pak.PakSet**: `exists/read/find/which/size/read_base/base_readers`; entries have `usize`. Index map `self.map` (lowercase `motogp24/content/...` → reader); readers have `.files`.
 - **mgp_pakwrite.write_pak(dest, [(name, path)])**: v8, key `"00"*32` for test fixtures.
 
