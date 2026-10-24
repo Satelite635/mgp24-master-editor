@@ -32,3 +32,6 @@ Section "number projectors" above riding style. Lookup: `_rider_projectors` in w
 - Tested with `pip install bpy==4.5.*` (py3.11) headless: load → move/scale → write → re-read OK; no-op save byte-identical.
 - **Unverified**: axis/units convention vs Faizal's imported model, origin of the bike, box size, projection axis. Calibrate once against a bike whose number placement is known in game.
 - Build: `./build_zip.sh` (vendors uprops.py + mgp_core.py into the add-on zip).
+
+## MotoGP 25 (v101)
+Zen package, one .uasset (`projfile.parse_zen`). Item layout: `00 05` [Tag FName 8] [`80 07 01` (Priority=0, zero-masked) or `00 07` + Priority i32] [`00 07`] [quat 4 doubles][translation 3][scale 3][Layers count i32][layer header u16 + zero mask][BaseColorMap import i32]. Official GP25 files (projector108_002) reference the rider's number texture directly (`MotoGP_Pedro-Acosta_Number37`); custom ones use `47` / `NU_Four_Number_Projector`. Rider lookup on GP25 data and in-game effect: untested.

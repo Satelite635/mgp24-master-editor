@@ -16,6 +16,7 @@ Files are read from <mod folder> first, then from the game's .pak files (--paks,
 the GUI). Everything the tool writes goes into <mod folder>; originals there are copied to
 <mod folder>/_mgp_backup/<timestamp>/ before the first change.
 Needs:  pip install pycryptodome   (AES for the encrypted paks)
+        pip install blake3         (optional: fast chunk hashes when packing MotoGP 25 .utoc/.ucas)
 """
 import argparse, json, os, sys, tempfile
 

@@ -18,6 +18,9 @@ DB_REL = "Content/assets/data/db/NoCook/db.sqlite3"
 BIND_DIR = "Content/assets/graphics/bindings"
 STYLE_REL = "Content/assets/data/datatables/Anim/RidingStyle_DT"
 SIDECARS = (".uasset", ".uexp", ".ubulk")
+# Supported games: id -> Unreal project folder name. MotoGP 25 (UE5.5, IoStore): its .uassets are zen
+# packages in .utoc/.ucas (mgp_iostore, mgp_zen); only the binding tables are edited there so far.
+GAMES = {"gp24": "motogp24", "gp25": "motogp25"}
 
 
 class MgpError(Exception):
@@ -466,9 +469,9 @@ class Source:
         return self.paks.which(rel) if self.paks and self.paks.exists(rel) else "missing"
 
 
-def find_root(path):
+def find_root(path, project="motogp24"):
     """Mod/working folder: the folder that holds Content/, or its parent (e.g. 'motogp24')."""
-    for cand in (path, os.path.join(path, "motogp24")):
+    for cand in (path, os.path.join(path, project)):
         if os.path.isdir(os.path.join(cand, "Content")):
             return cand
     if os.path.isdir(path):
@@ -638,15 +641,18 @@ def normalize_target(text):
 
 
 class Project:
-    def __init__(self, work, paks_dir=None, key=None, include_patch=True, staged=False):
-        self.real_root = find_root(work)
+    def __init__(self, work, paks_dir=None, key=None, include_patch=True, staged=False, game="gp24"):
+        if game not in GAMES:
+            raise MgpError("unknown game %r" % game)
+        self.game, self.project = game, GAMES[game]
+        self.real_root = find_root(work, self.project)
         self.staged = staged
         self.root = os.path.join(self.real_root, STAGING) if staged else self.real_root
         self.paks = None
         if paks_dir:
             from mgp_pak import PakSet, PakError
             try:
-                self.paks = PakSet(paks_dir, key or "", include_patch=include_patch)
+                self.paks = PakSet(paks_dir, key or "", project=self.project, include_patch=include_patch)
             except PakError as e:
                 raise MgpError(str(e))
         self.src = Source(self.root, self.paks, self.real_root if staged else None)
@@ -672,8 +678,22 @@ class Project:
     # ---- every binding DataTable (riders' gear, suits, bike extras, ...)
     def table(self, rel):
         if rel not in self._tables:
-            self._tables[rel] = BindingTable(self.src.read(rel + ".uasset"), self.src.read(rel + ".uexp"))
+            if self.game != "gp24":                  # zen package: one .uasset, no .uexp
+                import mgp_zen
+                self.no_legacy(rel)
+                try:
+                    self._tables[rel] = mgp_zen.ZenBindingTable(self.src.read(rel + ".uasset"))
+                except mgp_zen.ZenError as e:
+                    raise MgpError("%s: %s" % (rel.rsplit("/", 1)[-1], e))
+            else:
+                self._tables[rel] = BindingTable(self.src.read(rel + ".uasset"), self.src.read(rel + ".uexp"))
         return self._tables[rel]
+
+    def no_legacy(self, stem):
+        """MotoGP 25: a .uasset + .uexp in the mod folder is a legacy copy (extracted for UAssetGUI); the tool reads zen only."""
+        if self.src.exists(stem + ".uexp") and self.src.origin(stem + ".uexp") in ("mod folder", "unsaved"):
+            raise MgpError("%s in the mod folder is a legacy copy (for UAssetGUI) - edit it there, or delete its "
+                           ".uasset/.uexp to edit it in this tool. Pack mod converts it back to zen." % stem.rsplit("/", 1)[-1])
 
     def table_names(self):
         if self._names is None:
@@ -696,11 +716,21 @@ class Project:
             except Exception:
                 continue
             if key in t.rows:
-                out.append((rel, category(rel), t.target(key)))
+                try:
+                    out.append((rel, category(rel), t.target(key)))
+                except Exception:                        # one odd table must not hide the others
+                    continue
         return out
 
     # ---- riding style (RidingStyle_DT, keyed like the binding tables)
     def style(self):
+        if self._style is None and self.game != "gp24":         # zen package: one .uasset
+            import mgp_zen
+            self.no_legacy(STYLE_REL)
+            try:
+                self._style = mgp_zen.ZenStyleTable(self.src.read(STYLE_REL + ".uasset"))
+            except mgp_zen.ZenError as e:
+                raise MgpError("RidingStyle_DT: %s" % e)
         if self._style is None:
             self._style = StyleTable(self.src.read(STYLE_REL + ".uasset"), self.src.read(STYLE_REL + ".uexp"))
         return self._style
@@ -724,7 +754,11 @@ class Project:
         rel = game_to_rel(pkg) + ".uasset"
         if not self.src.exists(rel):
             raise MgpError("asset not found in mod folder or paks: " + pkg)
-        names = UAsset(self.src.read(rel)).export_object_names()
+        if self.game != "gp24":
+            import mgp_zen
+            names = [e["name"] for e in mgp_zen.ZenPackage(self.src.read(rel)).exports]
+        else:
+            names = UAsset(self.src.read(rel)).export_object_names()
         if not names:
             raise MgpError("asset has no exports: " + pkg)
         return pkg + "." + names[0]
@@ -1052,6 +1086,8 @@ class Project:
     def clone_for_pilot(self, pilot_key, new_tag, dry_run=False, rel=None):
         """Clone the pilot's set under new_tag and repoint the pilot's binding row to it.
         `rel`: the bike table to use (default DT_BikeOfficial)."""
+        if self.game != "gp24":
+            raise MgpError("cloning bike sets is not supported for MotoGP 25 yet - repoint to an existing set instead")
         dt = self.table(rel) if rel else self.dt
         obj = dt.target(pilot_key)
         plan = plan_clone(self.src, obj, new_tag, dt)

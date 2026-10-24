@@ -1,6 +1,6 @@
 """Read/write the number projectors (ProjectorCustomNNN_VVV / ProjectorsDataSource) of MotoGP 24 bikes.
 No Blender imports here, so it can be tested outside Blender."""
-import os, shutil
+import os, re, shutil, struct
 
 import uprops
 
@@ -22,7 +22,10 @@ def load(path):
 
 
 def parse(uasset_bytes, uexp_bytes):
-    """Same as load() from bytes (used by the editor, which reads through mod folder + paks)."""
+    """Same as load() from bytes (used by the editor, which reads through mod folder + paks).
+    uexp_bytes None: a MotoGP 25 zen package (one .uasset), see parse_zen."""
+    if uexp_bytes is None:
+        return parse_zen(uasset_bytes)
     a = uprops.Asset(uasset_bytes, uexp_bytes)
     t = uprops.tree(a)
     arr = next((p for p in t["props"] if p["name"] == "TaggedProjectors"), None)
@@ -48,6 +51,69 @@ def parse(uasset_bytes, uexp_bytes):
                         priority=pri.get("value"), texture=tex,
                         offs=dict(rot=rot["off"], loc=loc["off"], scale=sc["off"], priority=pri.get("off"))))
     return a, out
+
+
+class ZenProjectors:
+    """A MotoGP 25 projector file (zen package, unversioned properties) patched in place: the transform is
+    10 doubles (UE5 LWC), so edits never change the size."""
+    zen = True
+
+    def __init__(self, data):
+        self.data = bytearray(data)
+
+    def set_value(self, off, kind, vals):
+        if kind == "floats":
+            struct.pack_into("<%dd" % len(vals), self.data, off, *vals)
+        elif kind == "num":
+            struct.pack_into("<i", self.data, off, int(vals))
+        else:
+            raise ValueError("unsupported value kind " + kind)
+
+    def to_bytes(self):
+        return bytes(self.data)
+
+
+# One TaggedProjectors item (IgnitionTaggedProjectorData), unversioned (read on GP25 projector108_00X):
+# [00 05][Tag FName 8][Projector: header 80 07 + zero mask 01 (Priority=0) | header 00 07 + Priority i32]
+# [Transform: 00 07][Rotation 4 doubles][Translation 3][Scale3D 3][Layers count i32][layer header u16 ...]
+_ZEN_ITEM = re.compile(rb"\x00\x05(.{8})(?:\x80\x07\x01|\x00\x07(.{4}))\x00\x07", re.S)
+
+
+def parse_zen(data):
+    import mgp_zen
+    z = mgp_zen.ZenPackage(data)
+    if len(z.exports) != 1 or not any(n.endswith("/ProjectorsDataSource") for n in z.imported_package_names()):
+        raise ValueError("no TaggedProjectors - not a projector file")
+    base, x = z.header_size, z.export_data()
+    out = []
+    for m in _ZEN_ITEM.finditer(x):
+        ni, nn = struct.unpack_from("<II", m.group(1))
+        if ni >= len(z.names) or nn > 1000:
+            continue
+        p = m.end()
+        if p + 84 > len(x):
+            raise ValueError("projector %s: transform not readable" % z.names[ni])
+        v = struct.unpack_from("<10d", x, p)
+        tex, q = "", p + 80
+        if struct.unpack_from("<i", x, q)[0] > 0:                     # first layer: BaseColorMap is its first property
+            hdr = struct.unpack_from("<H", x, q + 4)[0]
+            q += 6
+            zero_first = False
+            if hdr & 0x80:                                             # zero mask follows the header
+                nvals = hdr >> 9
+                zero_first = bool(x[q] & 1)
+                q += 1 if nvals <= 8 else 2 if nvals <= 16 else ((nvals + 31) // 32) * 4
+            if not zero_first and not hdr & 0x7F:
+                tex = z.import_package(struct.unpack_from("<i", x, q)[0])
+        pri = struct.unpack_from("<i", m.group(2))[0] if m.group(2) else 0
+        out.append(dict(tag=mgp_zen.join_fname(z.names[ni], nn), loc=list(v[4:7]), quat=list(v[0:4]), scale=list(v[7:10]),
+                        priority=pri, texture=tex,
+                        offs=dict(rot=base + p, loc=base + p + 32, scale=base + p + 56,
+                                  priority=base + m.start(2) if m.group(2) else None)))
+    count = struct.unpack_from("<i", x, _ZEN_ITEM.search(x).start() - 4)[0] if out else -1
+    if count != len(out):
+        raise ValueError("TaggedProjectors layout not understood (found %d of %d)" % (len(out), count))
+    return ZenProjectors(data), out
 
 
 def patch(a, projs, values):

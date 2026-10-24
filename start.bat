@@ -12,5 +12,11 @@ if errorlevel 1 (
   python -m pip install pycryptodome
   if errorlevel 1 ( echo Install failed. & pause & exit /b 1 )
 )
+python -c "import blake3" >nul 2>nul
+if errorlevel 1 (
+  echo Installing blake3 ^(one time, makes MotoGP 25 packing fast^)...
+  python -m pip install blake3
+  if errorlevel 1 echo blake3 install failed - packing still works, just slower.
+)
 python motogp_master_editor.py web
 pause
