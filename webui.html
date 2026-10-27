@@ -615,7 +615,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v106";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v107";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_retoc").value=ST.retoc||"";$("#s_usmap").value=ST.usmap||"";retocInfo();$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const g=ST.game_id||"gp24",keep=["riders","check","browse","loc","db","setup"];$("#s_gameid").value=g;$$("nav button").forEach(b=>b.style.display=(g==="gp24"||keep.includes(b.dataset.t))?"":"none");if(g!=="gp24"&&!keep.includes(($$("nav button.on")[0]||{}).dataset?.t))tab(ST.open?"riders":"setup")}
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}
@@ -679,7 +679,7 @@ function drawPilot(){
     for(const b of cats[c]){
       h+=`<tr><td class="mono">${esc(b.table)}</td><td class="mono">${esc(b.target)}</td>
       <td>${b.exists?`<span class="tag ${b.origin==="unsaved"?"warn":"ok"}">${esc(b.origin)}</span>`:`<span class="tag bad">not found</span>`+(b.suggest&&b.suggest.length?`<div class="help">did you mean:</div>`+b.suggest.map(p=>`<div><a href="#" class="sug" data-rel="${esc(b.rel)}" data-p="${esc(p)}" style="color:var(--acc)">${esc(p.split("/").pop())}</a></div>`).join(""):"")}</td>
-      <td style="white-space:nowrap"><button class="b" data-rel="${esc(b.rel)}">Replace…</button> <button class="b" data-edit="${esc(b.rel)}">Edit…</button> <button class="b" data-clone="${esc(b.rel)}">Clone…</button></td></tr>`;
+      <td style="white-space:nowrap"><button class="b" data-rel="${esc(b.rel)}">Replace…</button> <button class="b" data-edit="${esc(b.rel)}">Edit…</button> <button class="b" data-clone="${esc(b.rel)}">Clone…</button>${b.exists?` <button class="b" data-vals="${esc(b.rel)}" title="keep this asset's file, overwrite its numbers/vectors/colours with the ones of another .uasset">Copy values…</button>`:""}</td></tr>`;
     }
     h+="</table>";
   }
@@ -690,6 +690,7 @@ function drawPilot(){
   $$("#rpane a.sug").forEach(a=>a.onclick=guard(async e=>{e.preventDefault();finish(await api("/api/replace",{rel:a.dataset.rel,key:cur,target:a.dataset.p}))}));
   $$("#rpane button[data-clone]").forEach(b=>b.onclick=()=>cloneRowDlg(b.dataset.clone));
   $$("#rpane button[data-edit]").forEach(b=>b.onclick=()=>editDlg(b.dataset.edit));
+  $$("#rpane button[data-vals]").forEach(b=>b.onclick=()=>valsPick(b.dataset.vals));
   $("#b_look").onclick=lookDlg;$("#b_clone").onclick=cloneDlg;
 }
 
@@ -771,6 +772,19 @@ const openAsset=guard(async pkg=>{
      :"Extracted, but could not open it automatically"+(r.error?" ("+r.error+")":"")+".\nOpen this file yourself, edit and save it, then press Save here:\n"+r.path,r.launched?"ok":"bad");
   await refreshChanges();
 });
+function valsPick(rel){                       // Copy values from… for one asset of a binding row (the row's set can have several)
+  const row=bindings.find(b=>b.rel===rel);
+  api(`/api/members?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(cur)}`).then(ms=>{
+    ms=ms.filter(m=>m.exists);
+    if(ms.length===1){valDlg(ms[0].pkg);return}
+    ask(`<h3>Copy values · ${esc(row.table)} · ${esc(cur)}</h3>
+      <div class="help" style="margin:0 0 8px">Click the asset to copy values into.</div>
+      <div class="pick" id="v_pick" style="max-height:380px"></div>`,[{label:"Close"}]);
+    $("#v_pick").innerHTML=ms.map(m=>`<div data-p="${esc(m.pkg)}"><b>${m.main?"★ ":"&nbsp;&nbsp;&nbsp;"}${esc(m.pkg.split("/").pop())}</b>
+      <span class="tag">${esc(m.kind)}</span> <span class="tag ${m.origin==="unsaved"?"warn":""}">${esc(m.origin)}</span></div>`).join("");
+    $$("#v_pick div").forEach(d=>d.onclick=()=>valDlg(d.dataset.p));
+  }).catch(e=>toast(e.message,"bad"));
+}
 function editDlg(rel){
   const row=bindings.find(b=>b.rel===rel);
   api(`/api/members?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(cur)}`).then(ms=>{

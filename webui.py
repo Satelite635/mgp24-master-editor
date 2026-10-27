@@ -13,7 +13,7 @@ import uprops as U
 import audioport as AP
 import bnkport as BP
 
-VERSION = "v106"
+VERSION = "v107"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
