@@ -1,0 +1,140 @@
+"""Copy values between assets (valcopy). Without arguments: synthetic GP24 (UE4.27 tagged) projector files.
+With arguments: python test_valcopy.py <MotoGP_25.usmap> <gp25 zen projector .uasset> <gp25 legacy projector .uasset (+ .uexp next to it)>
+(samples: project files gp25-samples/ and gp26-to-gp25-projectors/)."""
+import os, struct, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import projfile as PJ
+import valcopy as V
+ok = lambda c, m: print(("PASS " if c else "FAIL ") + m) or (c or sys.exit(1))
+
+
+# ---- a minimal cooked UE4.27 projector asset (same layout the parsers read)
+class Gp24:
+    def __init__(self):
+        self.names = ["None"]
+
+    def n(self, text):
+        if text not in self.names:
+            self.names.append(text)
+        return self.names.index(text)
+
+    def fn(self, text):
+        return struct.pack("<ii", self.n(text), 0)
+
+    def tag(self, name, typ, body, extra=b""):
+        return self.fn(name) + self.fn(typ) + struct.pack("<ii", len(body), 0) + extra + b"\0" + body
+
+    def struct_(self, name, sname, body):
+        return self.tag(name, "StructProperty", body, self.fn(sname) + bytes(16))
+
+    def projector(self, tag, loc, quat, scale, prio):
+        tr = (self.struct_("Rotation", "Quat", struct.pack("<4f", *quat)) + self.struct_("Translation", "Vector", struct.pack("<3f", *loc)) +
+              self.struct_("Scale3D", "Vector", struct.pack("<3f", *scale)) + self.fn("None"))
+        pr = self.tag("Priority", "IntProperty", struct.pack("<i", prio)) + self.struct_("Transform", "Transform", tr) + self.fn("None")
+        return self.tag("Tag", "NameProperty", self.fn(tag)) + self.struct_("Projector", "VehicleCustomizationProjectorData", pr) + self.fn("None")
+
+    def build(self, projs, extra_float=None):
+        items = b"".join(self.projector(*p) for p in projs)
+        inner = self.fn("TaggedProjectors") + self.fn("StructProperty") + struct.pack("<ii", len(items), 0) + \
+            self.fn("IgnitionTaggedProjectorData") + bytes(16) + b"\0"
+        arr = struct.pack("<i", len(projs)) + inner + items
+        body = self.tag("TaggedProjectors", "ArrayProperty", arr, self.fn("StructProperty"))
+        if extra_float is not None:
+            body += self.tag("TextureResidentTime", "FloatProperty", struct.pack("<f", extra_float))
+        uexp = body + self.fn("None") + bytes(4) + struct.pack("<I", 0x9E2A83C1)
+        for t in ("/Script/Engine", "Package", "BlueprintGeneratedClass", "ProjectorsDataSource_C", "/Game/x/ProjectorsDataSource", "projector103_001"):
+            self.n(t)
+        return self.header(len(uexp) - 4), uexp
+
+    def header(self, size):
+        def fstr(s):
+            return struct.pack("<i", len(s) + 1) + s.encode() + b"\0"
+        names = b"".join(fstr(t) + bytes(4) for t in self.names)
+        imp = lambda cp, cn, outer, on: struct.pack("<iiiiiii", self.n(cp), 0, self.n(cn), 0, outer, self.n(on), 0)
+        imports = imp("/Script/CoreUObject", "Package", 0, "/Game/x/ProjectorsDataSource") + \
+            imp("/Script/Engine", "BlueprintGeneratedClass", -1, "ProjectorsDataSource_C")
+        fields = {}
+        out = bytearray()
+        out += struct.pack("<Iiiii", 0x9E2A83C1, -7, 864, 522, 0) + struct.pack("<i", 0)
+        fields["total"] = len(out); out += bytes(4)
+        out += fstr("None") + struct.pack("<I", 0x80000000)
+        out += struct.pack("<i", len(self.names)); fields["nameoff"] = len(out); out += bytes(4)
+        out += bytes(8)                                                     # gatherable text
+        out += struct.pack("<i", 1); fields["exportoff"] = len(out); out += bytes(4)
+        out += struct.pack("<i", 2); fields["importoff"] = len(out); out += bytes(4)
+        fields["dependsoff"] = len(out); out += bytes(4)
+        out += bytes(16) + bytes(16)                                        # soft refs, searchable, thumbnails, guid
+        out += struct.pack("<i", 1) + struct.pack("<ii", 1, len(self.names))
+        out += bytes(10) + fstr("") + bytes(10) + fstr("")
+        out += bytes(4) + struct.pack("<i", 0) + bytes(4) + struct.pack("<i", 0)
+        out += bytes(4) + bytes(8) + bytes(4) + struct.pack("<i", 0) + bytes(8)
+        no = len(out); out += names
+        io = len(out); out += imports
+        eo = len(out); out += bytes(104)
+        do = len(out); out += bytes(4)
+        for k, v in (("nameoff", no), ("importoff", io), ("exportoff", eo), ("dependsoff", do), ("total", len(out))):
+            struct.pack_into("<i", out, fields[k], v)
+        struct.pack_into("<i", out, eo, -2)                                 # class: ProjectorsDataSource_C
+        struct.pack_into("<ii", out, eo + 16, self.n("projector103_001"), 0)
+        struct.pack_into("<qq", out, eo + 28, size, len(out))
+        return bytes(out)
+
+
+A = [("SidePlateRight", (82, 0, 96), (0.25, 0, -0.96, 0), (0.39, 0.26, 0.26), 0),
+     ("FrontPlate", (-1.5, 33, 111), (-0.19, 0.18, -0.67, 0.68), (0.28, 0.24, 0.12), 2)]
+B = [("FrontPlate", (-1.0, 30, 110), (-0.19, 0.18, -0.67, 0.68), (0.5, 0.5, 0.5), 5),
+     ("SidePlateRight", (83, 0.3, 96.6), (0.25, -0.03, -0.96, 0.007), (0.21, 0.22, 0.21), 0),
+     ("SidePlateLeft", (-8, -28, 112), (0.15, 0.16, 0.68, 0.69), (0.28, 0.21, 0.10), 0)]
+
+ua, ux = Gp24().build(A, extra_float=3.0)
+ub, uxb = Gp24().build(B, extra_float=7.5)
+a, pa = PJ.parse(ua, ux)
+ok([p["tag"] for p in pa] == ["SidePlateRight", "FrontPlate"], "synthetic GP24 projector file parses")
+dst, src = V.Doc(ua, ux), V.Doc(ub, uxb)
+ok(dst.kind == src.kind == "tagged" and dst.cls == "ProjectorsDataSource_C", "opened as tagged GP24 files")
+r = V.copy(src, dst)
+st = {x["path"]: x["status"] for x in r["rows"]}
+ok(st.get("TaggedProjectors[FrontPlate].Projector.Transform.Translation") == "changed", "matched by tag, not by position")
+ok(st.get("TaggedProjectors[FrontPlate].Projector.Priority") == "changed" and st.get("TextureResidentTime") == "changed", "numbers copied")
+ok(st.get("TaggedProjectors[SidePlateLeft]") == "not in target", "extra source projector reported, not added")
+ua2, ux2 = dst.files()
+ok(ua2 == ua and len(ux2) == len(ux), "target .uasset untouched, .uexp same size")
+_, p2 = PJ.parse(ua2, ux2)
+f = {p["tag"]: p for p in p2}
+ok(abs(f["FrontPlate"]["loc"][1] - 30) < 1e-6 and f["FrontPlate"]["priority"] == 5 and abs(f["SidePlateRight"]["scale"][0] - 0.21) < 1e-6,
+   "patched values read back")
+again = V.copy(V.Doc(ub, uxb), V.Doc(ua2, ux2), write=False)
+ok(not again["changes"], "copying again changes nothing")
+only = V.copy(V.Doc(ub, uxb), V.Doc(ua, ux), only=["TaggedProjectors[FrontPlate]"])
+ok(only["changes"] and all(x["path"].startswith("TaggedProjectors[FrontPlate]") for x in only["rows"]), "copy limited to one projector")
+
+if len(sys.argv) > 3:
+    import usmap
+    u = usmap.load(sys.argv[1])
+    zen = open(sys.argv[2], "rb").read()
+    lua = open(sys.argv[3], "rb").read()
+    lux = open(sys.argv[3][:-7] + ".uexp", "rb").read()
+    z, l = V.Doc(zen, None, u), V.Doc(lua, lux, u)
+    ok(z.kind == "zen" and l.kind == "legacy-unversioned" and z.cls == l.cls, "GP25 zen + legacy read with the .usmap (%s)" % z.cls)
+    r = V.copy(z, l)
+    ok(not any(x["status"] in ("different", "skipped") for x in r["rows"]), "zen -> legacy: nothing skipped (%s)" % r["counts"])
+    ua2, ux2 = l.files()
+    ok(ua2 == lua and len(ux2) == len(lux), "legacy target: .uasset untouched, .uexp same size")
+    _, pz = PJ.parse(zen, None)
+    _, pl = PJ.parse(ua2, ux2)
+    ok([p["loc"] + p["quat"] + p["scale"] for p in pz] == [p["loc"] + p["quat"] + p["scale"] for p in pl], "legacy now has the zen file's transforms")
+    back = V.copy(V.Doc(ua2, ux2, u), V.Doc(zen, None, u), write=False)
+    ok(not back["changes"], "and the other way round there is nothing left to change")
+    # GP25 -> GP24: doubles into floats
+    g = V.Doc(ua, ux)
+    r = V.copy(z, g)
+    ok(r["changes"] > 0 and not any(x["why"].startswith("different type") for x in r["rows"] if x["status"] == "different"), "GP25 zen -> GP24 tagged: doubles written as floats (%s)" % r["counts"])
+    _, pg = PJ.parse(*g.files())
+    zt = {p["tag"]: p for p in pz}
+    ok(all(abs(p["loc"][k] - zt[p["tag"]]["loc"][k]) < 1e-3 for p in pg for k in range(3)), "GP24 file has the GP25 positions")
+    # zen target stays a valid zen file of the same size
+    z2 = V.Doc(zen, None, u)
+    r = V.copy(V.Doc(ub, uxb), z2)
+    out, _ = z2.files()
+    ok(len(out) == len(zen) and PJ.parse(out, None)[1][0]["tag"], "GP24 -> GP25 zen: same size, still parses (%s)" % r["counts"])
+print("VALCOPY OK")

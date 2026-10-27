@@ -12,8 +12,9 @@ from mgp_iostore import cityhash64
 
 PKG_TAG = 0x9E2A83C1
 SUMMARY = 52                       # bytes before the name batch (UE5.5 FZenPackageSummary, no versioning info)
-OFFSETS = range(24, 52, 4)         # ImportedPublicExportHashes .. ImportedPackageNames offsets
+
 EXPORT_ENTRY = 72
+HASH_VERSION = bytes.fromhex("000064c100000000")
 
 
 def script_import(path):
@@ -49,9 +50,12 @@ class ZenPackage:
         has_ver, self.header_size = struct.unpack_from("<II", d, 0)
         if has_ver:
             raise ZenError("zen package with versioning info - not supported (expected a cooked game file)")
-        n, nbytes = struct.unpack_from("<II", d, SUMMARY)
-        self.hash_version = struct.unpack_from("<Q", d, SUMMARY + 8)[0]
-        p = SUMMARY + 16 + 8 * n
+        # MotoGP 26 (newer UE5) has more offset fields before the name batch: find the batch by its hash version
+        self.summary = next((s for s in (SUMMARY, SUMMARY + 4, SUMMARY + 8) if d[s + 8:s + 16] == HASH_VERSION), SUMMARY)
+        S = self.summary
+        n, nbytes = struct.unpack_from("<II", d, S)
+        self.hash_version = struct.unpack_from("<Q", d, S + 8)[0]
+        p = S + 16 + 8 * n
         lens = [struct.unpack_from(">H", d, p + 2 * i)[0] for i in range(n)]
         p += 2 * n
         self.names = []
@@ -61,7 +65,7 @@ class ZenPackage:
                 self.names.append(d[p:p + k].decode("utf-16le")); p += k
             else:
                 self.names.append(d[p:p + ln].decode("latin-1")); p += ln
-        if p != SUMMARY + 16 + 10 * n + nbytes:
+        if p != S + 16 + 10 * n + nbytes:
             raise ZenError("name batch size mismatch - layout not understood")
         pad = struct.unpack_from("<Q", d, p)[0]
         q = p + 8 + pad
@@ -140,11 +144,12 @@ class ZenPackage:
             except UnicodeEncodeError:
                 b = t.encode("utf-16le"); enc.append((b, 0x8000 | len(t), t.lower().encode("utf-16le")))
         blob = b"".join(b for b, _, _ in enc)
-        out = bytearray(d[:SUMMARY])
+        S = self.summary
+        out = bytearray(d[:S])
         out += struct.pack("<IIQ", len(names), len(blob), self.hash_version)
         for i, (b, _, low) in enumerate(enc):
             out += struct.pack("<Q", cityhash64(low) if i >= len(self.names) else
-                               struct.unpack_from("<Q", d, SUMMARY + 16 + 8 * i)[0])
+                               struct.unpack_from("<Q", d, S + 16 + 8 * i)[0])
         for _, ln, _ in enc:
             out += struct.pack(">H", ln)
         out += blob
@@ -153,7 +158,7 @@ class ZenPackage:
         out += struct.pack("<q", len(self.bulk_map)) + self.bulk_map
         delta = len(out) - self.after_names
         out += d[self.after_names:self.header_size]
-        for o in OFFSETS:
+        for o in range(24, S, 4):
             v = struct.unpack_from("<i", out, o)[0]
             struct.pack_into("<i", out, o, v + delta)
         struct.pack_into("<I", out, 4, self.header_size + delta)

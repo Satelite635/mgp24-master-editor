@@ -19,4 +19,5 @@ Parse the result with `uprops.Asset(ua, ux)` and `parse_export(i)` for every exp
 GP24 originals of `RaceHud_BP`/`HUDRacePage` (supplied by user), SBK versions imported, `PenaltyTime`, `TimedSessionPenaltiesInfoWidgetManagerBP`, `MotoGPText_Regular` (Font), `F_TTSupermolotNeue-Regular_Mono_Font`. Ask Faizal to re-upload if needed.
 
 - `python test_bnkport.py <GP24 bank> <GP26 bank> [expected]` - GP26 bank import (samples: project files `gp26-audio-test/`).
+- `python test_valcopy.py [<MotoGP_25.usmap> <GP25 zen projector .uasset> <GP25 retoc-legacy projector .uasset>]` - Copy values (no args: synthetic GP24 files only; samples: project files `gp25-samples/MotoGP_25.usmap`, `gp26-to-gp25-projectors/projector108_002.uasset`, the legacy pair inside `TEST_projectors_scale_x3.zip`). Needs `zstandard` for the zstd .usmap.
 - `python test_zen.py <folder with GP25 DT_Bike*.uasset> [retoc-made .utoc]` - MotoGP 25 zen tables + IoStore writer (samples: project files `gp25-samples/`).

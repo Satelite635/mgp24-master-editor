@@ -201,6 +201,8 @@ dialog input[type=text]{width:100%;padding:8px}
       <div class="pathrow"><input type="text" id="s_gui" placeholder="C:\Tools\UAssetGUI\UAssetGUI.exe"><button class="b" data-pick="s_gui" data-kind="file">Browse</button><button class="b" data-reveal="s_gui">Open in Explorer</button></div>
       <label>retoc.exe (MotoGP 25: Extract/Edit… convert zen assets to legacy for UAssetGUI, Pack mod converts them back; leave empty to use retoc.exe next to the tool) <span id="s_retocinfo" class="help"></span></label>
       <div class="pathrow"><input type="text" id="s_retoc" placeholder="C:\Tools\retoc\retoc.exe"><button class="b" data-pick="s_retoc" data-kind="file">Browse</button><button class="b" data-reveal="s_retoc">Open in Explorer</button></div>
+      <label>Game .usmap (MotoGP 25/26 only: property layouts for "Copy values from…", e.g. MotoGP_25.usmap from FModel/UE4SS)</label>
+      <div class="pathrow"><input type="text" id="s_usmap" placeholder="C:\Tools\Mappings\MotoGP_25.usmap"><button class="b" data-pick="s_usmap" data-kind="usmap">Browse</button><button class="b" data-reveal="s_usmap">Open in Explorer</button></div>
       <label>Game (.exe, or a shortcut to it: .lnk / Steam .url) - used by "Launch game"</label>
       <div class="pathrow"><input type="text" id="s_game" placeholder="F:\SteamLibrary\steamapps\common\MotoGP24\MotoGP24.exe  or  C:\Users\you\Desktop\MotoGP24.lnk"><button class="b" data-pick="s_game" data-kind="game">Browse</button><button class="b" data-reveal="s_game">Open in Explorer</button></div>
       <div class="bar"><button class="b" id="s_guisave">Save these paths</button></div>
@@ -447,7 +449,7 @@ const brLoad=guard(async(dir,refresh)=>{
   if(brDir.includes("/"))h+=`<tr><td colspan="3"><a href="#" data-d="${esc(brDir.slice(0,brDir.lastIndexOf("/")))}">..</a></td></tr>`;
   h+=r.dirs.map(d=>`<tr><td colspan="2">📁 <a href="#" data-d="${esc(brDir+"/"+d.name)}">${esc(d.name)}</a></td><td style="opacity:.6">${d.count} files</td></tr>`).join("");
   h+=r.items.map((it,i)=>`<tr><td style="word-break:break-all">${esc(it.name)}</td><td style="opacity:.6;white-space:nowrap">${esc(it.exts.filter(Boolean).join(" "))} ${esc(it.origin)}</td><td style="white-space:nowrap">`+
-    (it.asset?`<button class="b" data-a="edit" data-i="${i}">Edit</button> <button class="b" data-a="clone" data-i="${i}">Clone</button> <button class="b" data-a="refs" data-i="${i}" title="which assets point to this one (takes a while)">Used by</button> `+(/projector/i.test(it.name.split("/").pop())?`<button class="b" data-a="proj" data-i="${i}">Copy projectors from…</button> `:""):"")+
+    (it.asset?`<button class="b" data-a="edit" data-i="${i}">Edit</button> <button class="b" data-a="clone" data-i="${i}">Clone</button> <button class="b" data-a="refs" data-i="${i}" title="which assets point to this one (takes a while)">Used by</button> <button class="b" data-a="values" data-i="${i}" title="keep this file, overwrite its numbers/vectors/colours with the ones of another .uasset">Copy values from…</button> `+(/projector/i.test(it.name.split("/").pop())?`<button class="b" data-a="proj" data-i="${i}">Copy projectors from…</button> `:""):"")+
     (it.base.toLowerCase().endsWith(".locres")?`<button class="b" data-a="loc" data-i="${i}">Open in Localization</button> `:"")+
     `<button class="b" data-a="extract" data-i="${i}">Extract</button></td></tr>`).join("");
   $("#br_out").innerHTML=h+"</table>";
@@ -470,6 +472,37 @@ async function projDlg(dst){
   $("#pj_src").onchange=guard(async()=>{const src=$("#pj_src").value.trim();if(!d.files.includes(src))return;
     const s=await api("/api/proj?pkg="+encodeURIComponent(src));$("#pj_out").innerHTML=`<div style="margin:6px 0">${esc(src.split("/").pop())} (${esc(s.origin)}):</div>`+tbl(s.projectors,true)});
 }
+function valDlg(dst){
+  const gp24=(ST.game_id||"gp24")==="gp24",name=dst.split("/").pop();
+  const show=r=>{const c=r.counts,keys=["changed","different","skipped","kept","not in target","not in source","same"];
+    const all=$("#cv_all").checked,rows=r.rows.filter(x=>all||x.status!=="same");
+    const cls={changed:"ok",same:"",different:"warn",skipped:"warn",kept:"","not in target":"warn","not in source":""};
+    $("#cv_out").innerHTML=`<div style="margin:8px 0">${r.written?`<b>Wrote ${r.written} value(s)</b> - press Save to keep it.`:r.changes?`<b>${r.changes} value(s) would change.</b> Press Copy to write them.`:"<b>Nothing to change.</b>"}
+      <span class="help">${esc(r.src_kind)} ${esc(r.src_cls)} → ${esc(r.dst_kind)} ${esc(r.dst_cls)}</span></div>
+      <div class="help">${keys.filter(k=>c[k]).map(k=>`${c[k]} ${k}`).join(", ")}${r.notes.length?"<br>"+r.notes.map(esc).join("<br>"):""}</div>
+      <div style="max-height:45vh;overflow:auto;margin-top:6px"><table class="mono" style="width:100%;font-size:12px"><tr><th align=left></th><th align=left>Property</th><th align=left>Source</th><th align=left>Target now</th><th align=left>Why</th></tr>`+
+      rows.slice(0,500).map(x=>`<tr><td><span class="tag ${cls[x.status]||""}">${esc(x.status)}</span></td><td style="word-break:break-all">${esc(x.path)}</td><td>${esc(JSON.stringify(x.src??""))}</td><td>${esc(JSON.stringify(x.dst??""))}</td><td class="help">${esc(x.why||"")}</td></tr>`).join("")+
+      `</table>${rows.length>500?`<div class="help">${rows.length-500} more rows not shown</div>`:""}</div>`};
+  let last=null;
+  const run=async apply=>{const src=$("#cv_src").value.trim();if(!src){toast("Choose the asset to copy values from","bad");return false}
+    const body={dst,src,apply,src_usmap:$("#cv_smap").value.trim(),only:$("#cv_only").value.split(",")};
+    if(!gp24){body.usmap=$("#cv_map").value.trim();ST.usmap=body.usmap}
+    last=await api("/api/copyvalues",body);show(last);
+    if(apply)toast(last.written?`Copied ${last.written} value(s) into ${name} - press Save to keep it`:"Nothing was changed",last.written?"ok":"bad");
+    return false};
+  ask(`<h3>Copy values into ${esc(name)}</h3>
+    <div class="sub">Keeps this file as it is (header, names, imports, texture/material paths) and overwrites only numbers, bools, vectors, colours and transforms that match by property name (projectors and material parameters by their tag/name). Nothing is added or removed, so the file size stays the same. References and texts are never copied.</div>
+    <div class="pathrow" style="margin-top:10px"><input type="text" id="cv_src" placeholder="copy from: a .uasset on your PC (+ its .uexp next to it), or a /Game/... path" autocomplete="off"><button class="b" id="cv_pick">Choose…</button></div>
+    ${gp24?"":`<div class="pathrow"><input type="text" id="cv_map" placeholder="this game's .usmap (needed for MotoGP 25/26)" value="${esc(ST.usmap||"")}"><button class="b" id="cv_mpick">Choose…</button></div>`}
+    <div class="pathrow"><input type="text" id="cv_smap" placeholder="source .usmap - only if the source comes from another MotoGP 25/26 game (e.g. MotoGP 26)"><button class="b" id="cv_spick">Choose…</button></div>
+    <input type="text" id="cv_only" placeholder="optional: copy only these, comma separated (e.g. TaggedProjectors[FrontPlate])" autocomplete="off" style="width:100%">
+    <label style="display:block;margin-top:6px"><input type="checkbox" id="cv_all"> show unchanged values too</label>
+    <div id="cv_out" class="sub">Press Preview to see what would change.</div>`,
+   [{label:"Close"},{label:"Preview",fn:()=>run(false)},{label:"Copy",cls:"p",fn:()=>run(true)}]);
+  const pick=(id,kind)=>guard(async()=>{const r=await api("/api/pick",{kind,initial:$("#"+id).value});if(r.path)$("#"+id).value=r.path});
+  $("#cv_pick").onclick=pick("cv_src","uasset");$("#cv_spick").onclick=pick("cv_smap","usmap");if(!gp24)$("#cv_mpick").onclick=pick("cv_map","usmap");
+  $("#cv_all").onchange=()=>{if(last)show(last)};
+}
 async function brAct(a,it){
   if(a==="extract"){
     const go=async(mode)=>{const r=await api("/api/browse/extract",{bases:[it.base],overwrite:mode});
@@ -480,6 +513,7 @@ async function brAct(a,it){
     await go(undefined);return}
   if(a==="edit"){const r=await api("/api/edit",{pkg:it.pkg});toast(r.launched?"Opened in UAssetGUI":("Staged "+r.path+(r.error?" ("+r.error+")":"")),r.launched?"ok":"bad");return}
   if(a==="proj"){projDlg(it.pkg);return}
+  if(a==="values"){valDlg(it.pkg);return}
   if(a==="refs"){await api("/api/refs",{pkg:it.pkg});
     packTrack("Finding uses",r=>{if(r.error||!r.result)return;const h=r.result.hits;
       ask(`<h3>${h.length} asset(s) use ${esc(r.result.name)}</h3><div class="sub">${r.result.checked} assets checked${r.result.unreadable?`, ${r.result.unreadable} unreadable`:""}.</div><div class="sub mono" style="max-height:50vh;overflow:auto">${h.map(x=>esc(x.file)+` <span style="opacity:.6">${esc(x.origin)}</span>`).join("<br>")||"Nothing points to it - the game probably never loads it."}</div>`,[{label:"OK",cls:"p"}])});return}
@@ -581,8 +615,8 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v105";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
-  $("#s_gui").value=ST.uassetgui||"";$("#s_retoc").value=ST.retoc||"";retocInfo();$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v106";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  $("#s_gui").value=ST.uassetgui||"";$("#s_retoc").value=ST.retoc||"";$("#s_usmap").value=ST.usmap||"";retocInfo();$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const g=ST.game_id||"gp24",keep=["riders","check","browse","loc","db","setup"];$("#s_gameid").value=g;$$("nav button").forEach(b=>b.style.display=(g==="gp24"||keep.includes(b.dataset.t))?"":"none");if(g!=="gp24"&&!keep.includes(($$("nav button.on")[0]||{}).dataset?.t))tab(ST.open?"riders":"setup")}
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}
   if(ST.open){await loadPilots();const n=await refreshChanges();if(n&&!recoveryAsked){recoveryAsked=true;recoverDlg(n)}}else tab("setup");
@@ -607,8 +641,8 @@ $("#b_exit").onclick=async()=>{await refreshChanges();
     [{label:"Cancel"},{label:"Exit without saving",fn:()=>bye(false)},{label:"Save and exit",cls:"p",fn:()=>bye(true)}])};
 window.addEventListener("beforeunload",e=>{if(dirtyN&&!quitting){e.preventDefault();e.returnValue=""}});
 document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="s"){e.preventDefault();if(dirtyN)doSave()}});
-$("#s_gameid").onchange=()=>{const v=(ST.games||{})[$("#s_gameid").value]||{};$("#s_mod").value=v.mod_folder||"";$("#s_paks").value=v.paks_dir||"";$("#s_patch").checked=v.include_patch!==false;$("#s_game").value=v.game||"";$("#s_key").value=""};
-$("#s_guisave").onclick=guard(async()=>{const r=await api("/api/settings",{game_id:$("#s_gameid").value,uassetgui:$("#s_gui").value,game:$("#s_game").value,retoc:$("#s_retoc").value});ST.retoc=r.retoc;ST.retoc_found=r.retoc_found;retocInfo();if((ST.games||{})[$("#s_gameid").value])ST.games[$("#s_gameid").value].game=r.game;if($("#s_gameid").value===ST.game_id)ST.game=r.game;ST.game=r.game;ST.uassetgui=r.uassetgui;$("#b_launch").disabled=!ST.game;toast("Saved","ok")});
+$("#s_gameid").onchange=()=>{const v=(ST.games||{})[$("#s_gameid").value]||{};$("#s_mod").value=v.mod_folder||"";$("#s_paks").value=v.paks_dir||"";$("#s_patch").checked=v.include_patch!==false;$("#s_game").value=v.game||"";$("#s_usmap").value=v.usmap||"";$("#s_key").value=""};
+$("#s_guisave").onclick=guard(async()=>{const r=await api("/api/settings",{game_id:$("#s_gameid").value,uassetgui:$("#s_gui").value,game:$("#s_game").value,retoc:$("#s_retoc").value,usmap:$("#s_usmap").value});ST.retoc=r.retoc;ST.usmap=r.usmap;ST.retoc_found=r.retoc_found;retocInfo();if((ST.games||{})[$("#s_gameid").value])ST.games[$("#s_gameid").value].game=r.game;if($("#s_gameid").value===ST.game_id)ST.game=r.game;ST.game=r.game;ST.uassetgui=r.uassetgui;$("#b_launch").disabled=!ST.game;toast("Saved","ok")});
 $("#b_launch").onclick=guard(async()=>{await api("/api/launch",{});toast(dirtyN?"Game started - "+dirtyN+" unsaved change(s) are not in the game":"Game started","ok")});
 $("#s_go").onclick=guard(async()=>{
   ST=await api("/api/open",{game_id:$("#s_gameid").value,mod_folder:$("#s_mod").value,paks_dir:$("#s_paks").value,aes_key:$("#s_key").value,include_patch:$("#s_patch").checked});$("#b_launch").disabled=!ST.game;
