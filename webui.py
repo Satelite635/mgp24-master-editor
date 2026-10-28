@@ -13,7 +13,7 @@ import uprops as U
 import audioport as AP
 import bnkport as BP
 
-VERSION = "v107"
+VERSION = "v108"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -724,6 +724,7 @@ def make_api(S):
         src = (b.get("src") or "").strip().strip('"')
         if not src:
             raise C.MgpError("choose the asset to copy values from")
+        sname = ""
         if os.path.isfile(src):
             if not src.lower().endswith(".uasset"):
                 raise C.MgpError("choose a .uasset file")
@@ -731,15 +732,21 @@ def make_api(S):
             ue = src[:-7] + ".uexp"
             sux = open(ue, "rb").read() if os.path.isfile(ue) else None
             sname = src
-        elif src.startswith("/Game/"):
+        elif src.startswith("/Game/") or b.get("rel") and src in P.table(b["rel"]).rows:
+            if not src.startswith("/Game/"):                     # another rider: their asset in the same table
+                tgt = P.table(b["rel"]).target(src)
+                if not is_game(tgt):
+                    raise C.MgpError("%s has no asset in %s" % (src, tname(b["rel"])))
+                sname = "%s (%s)" % (tgt.partition(".")[0], src)
+                src = tgt.partition(".")[0]
             sst = C.game_to_rel(C.normalize_target(src))
             if not P.src.exists(sst + ".uasset"):
                 raise C.MgpError("source asset not found in mod folder or paks: " + src)
             sua = P.src.read(sst + ".uasset")
             sux = P.src.read(sst + ".uexp") if not zen and P.src.exists(sst + ".uexp") else None
-            sname = src
+            sname = sname or src
         else:
-            raise C.MgpError("source must be a .uasset file on this PC or a /Game/... path: " + src)
+            raise C.MgpError("copy from: a rider, a /Game/... path or a .uasset file on this PC (not found: %s)" % src)
         sdoc = VC.Doc(sua, sux, smap)
         ddoc = VC.Doc(dua, dux, umap)
         only = [o.strip() for o in (b.get("only") or []) if o.strip()]

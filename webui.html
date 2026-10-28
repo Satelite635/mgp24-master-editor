@@ -472,36 +472,50 @@ async function projDlg(dst){
   $("#pj_src").onchange=guard(async()=>{const src=$("#pj_src").value.trim();if(!d.files.includes(src))return;
     const s=await api("/api/proj?pkg="+encodeURIComponent(src));$("#pj_out").innerHTML=`<div style="margin:6px 0">${esc(src.split("/").pop())} (${esc(s.origin)}):</div>`+tbl(s.projectors,true)});
 }
-function valDlg(dst){
-  const gp24=(ST.game_id||"gp24")==="gp24",name=dst.split("/").pop();
+function valDlg(dst,rel){                    // rel: binding table whose row points at dst (offers other riders' assets)
+  const gp24=(ST.game_id||"gp24")==="gp24",name=dst.split("/").pop(),dir="Content/"+dst.slice(6).split("/").slice(0,-1).join("/");
   const show=r=>{const c=r.counts,keys=["changed","different","skipped","kept","not in target","not in source","same"];
     const all=$("#cv_all").checked,rows=r.rows.filter(x=>all||x.status!=="same");
     const cls={changed:"ok",same:"",different:"warn",skipped:"warn",kept:"","not in target":"warn","not in source":""};
     $("#cv_out").innerHTML=`<div style="margin:8px 0">${r.written?`<b>Wrote ${r.written} value(s)</b> - press Save to keep it.`:r.changes?`<b>${r.changes} value(s) would change.</b> Press Copy to write them.`:"<b>Nothing to change.</b>"}
-      <span class="help">${esc(r.src_kind)} ${esc(r.src_cls)} → ${esc(r.dst_kind)} ${esc(r.dst_cls)}</span></div>
+      <span class="help">from ${esc(String(r.src).split(/[\\/]/).pop())} (${esc(r.src_kind)} ${esc(r.src_cls)})</span></div>
       <div class="help">${keys.filter(k=>c[k]).map(k=>`${c[k]} ${k}`).join(", ")}${r.notes.length?"<br>"+r.notes.map(esc).join("<br>"):""}</div>
-      <div style="max-height:45vh;overflow:auto;margin-top:6px"><table class="mono" style="width:100%;font-size:12px"><tr><th align=left></th><th align=left>Property</th><th align=left>Source</th><th align=left>Target now</th><th align=left>Why</th></tr>`+
+      <div style="max-height:35vh;overflow:auto;margin-top:6px"><table class="mono" style="width:100%;font-size:12px"><tr><th align=left></th><th align=left>Property</th><th align=left>Source</th><th align=left>Target now</th><th align=left>Why</th></tr>`+
       rows.slice(0,500).map(x=>`<tr><td><span class="tag ${cls[x.status]||""}">${esc(x.status)}</span></td><td style="word-break:break-all">${esc(x.path)}</td><td>${esc(JSON.stringify(x.src??""))}</td><td>${esc(JSON.stringify(x.dst??""))}</td><td class="help">${esc(x.why||"")}</td></tr>`).join("")+
       `</table>${rows.length>500?`<div class="help">${rows.length-500} more rows not shown</div>`:""}</div>`};
-  let last=null;
-  const run=async apply=>{const src=$("#cv_src").value.trim();if(!src){toast("Choose the asset to copy values from","bad");return false}
-    const body={dst,src,apply,src_usmap:$("#cv_smap").value.trim(),only:$("#cv_only").value.split(",")};
+  let last=null,riders=[],near=[];
+  const run=async apply=>{const src=$("#cv_src").value.trim();if(!src){toast("Pick or type what to copy values from","bad");return false}
+    const body={dst,src,apply,rel:rel||"",src_usmap:$("#cv_smap").value.trim(),only:$("#cv_only").value.split(",")};
     if(!gp24){body.usmap=$("#cv_map").value.trim();ST.usmap=body.usmap}
-    last=await api("/api/copyvalues",body);show(last);
+    last=await api("/api/copyvalues",body);$("#cv_pick").style.display="none";show(last);
     if(apply)toast(last.written?`Copied ${last.written} value(s) into ${name} - press Save to keep it`:"Nothing was changed",last.written?"ok":"bad");
     return false};
-  ask(`<h3>Copy values into ${esc(name)}</h3>
-    <div class="sub">Keeps this file as it is (header, names, imports, texture/material paths) and overwrites only numbers, bools, vectors, colours and transforms that match by property name (projectors and material parameters by their tag/name). Nothing is added or removed, so the file size stays the same. References and texts are never copied.</div>
-    <div class="pathrow" style="margin-top:10px"><input type="text" id="cv_src" placeholder="copy from: a .uasset on your PC (+ its .uexp next to it), or a /Game/... path" autocomplete="off"><button class="b" id="cv_pick">Choose…</button></div>
-    ${gp24?"":`<div class="pathrow"><input type="text" id="cv_map" placeholder="this game's .usmap (needed for MotoGP 25/26)" value="${esc(ST.usmap||"")}"><button class="b" id="cv_mpick">Choose…</button></div>`}
-    <div class="pathrow"><input type="text" id="cv_smap" placeholder="source .usmap - only if the source comes from another MotoGP 25/26 game (e.g. MotoGP 26)"><button class="b" id="cv_spick">Choose…</button></div>
-    <input type="text" id="cv_only" placeholder="optional: copy only these, comma separated (e.g. TaggedProjectors[FrontPlate])" autocomplete="off" style="width:100%">
-    <label style="display:block;margin-top:6px"><input type="checkbox" id="cv_all"> show unchanged values too</label>
-    <div id="cv_out" class="sub">Press Preview to see what would change.</div>`,
-   [{label:"Close"},{label:"Preview",fn:()=>run(false)},{label:"Copy",cls:"p",fn:()=>run(true)}]);
+  ask(`<h3>Copy values into ${esc(name)}</h3><div class="sub">now: ${esc(dst)}</div>
+    <input type="text" id="cv_src" placeholder="type to filter, or paste another rider / /Game/… path / a .uasset file on your PC" autocomplete="off">
+    <div class="pick" id="cv_pick"></div>
+    <div class="help">Pick where the values come from. This file stays as it is (names, paths, textures); only numbers, vectors, colours and transforms with the same property name are overwritten. Press Preview to see what would change.</div>
+    <details style="margin-top:6px"><summary class="help" style="cursor:pointer">More options</summary>
+      ${gp24?"":`<div class="pathrow"><input type="text" id="cv_map" placeholder="this game's .usmap (needed for MotoGP 25/26)" value="${esc(ST.usmap||"")}"><button class="b" id="cv_mpick">Choose…</button></div>`}
+      <div class="pathrow"><input type="text" id="cv_smap" placeholder="source .usmap - only if the source comes from another MotoGP 25/26 game (e.g. MotoGP 26)"><button class="b" id="cv_spick">Choose…</button></div>
+      <input type="text" id="cv_only" placeholder="copy only these, comma separated (e.g. TaggedProjectors[FrontPlate])" autocomplete="off" style="width:100%">
+      <label style="display:block;margin-top:6px"><input type="checkbox" id="cv_all"> show unchanged values in the result</label></details>
+    <div id="cv_out" class="sub"></div>`,
+   [{label:"Cancel"},{label:"Preview",fn:()=>run(false)},{label:"Copy",cls:"p",fn:()=>run(true)}]);
+  const draw=()=>{const q=$("#cv_src").value.toLowerCase(),rd=riders.filter(r=>r.toLowerCase().includes(q)).slice(0,60),pk=near.filter(p=>p.toLowerCase().includes(q)&&p!==dst).slice(0,150);
+    $("#cv_pick").style.display="";
+    $("#cv_pick").innerHTML=(rd.length?`<small>other riders (copy values from their asset)</small>`+rd.map(r=>`<div>${esc(r)}</div>`).join(""):"")+
+      (pk.length?`<small>assets in the same place</small>`+pk.map(r=>`<div>${esc(r)}</div>`).join(""):"")+
+      `<small>somewhere else</small><div class="rb" data-k="file">📂 Choose a .uasset file on your PC (e.g. from another game)…</div>`;
+    $$("#cv_pick div:not(.rb)").forEach(d=>d.onclick=()=>{$("#cv_src").value=d.textContent;draw()});
+    $("#cv_pick .rb").onclick=guard(async()=>{const r=await api("/api/pick",{kind:"uasset",initial:$("#cv_src").value});if(r.path){$("#cv_src").value=r.path;draw()}});};
   const pick=(id,kind)=>guard(async()=>{const r=await api("/api/pick",{kind,initial:$("#"+id).value});if(r.path)$("#"+id).value=r.path});
-  $("#cv_pick").onclick=pick("cv_src","uasset");$("#cv_spick").onclick=pick("cv_smap","usmap");if(!gp24)$("#cv_mpick").onclick=pick("cv_map","usmap");
+  $("#cv_spick").onclick=pick("cv_smap","usmap");if(!gp24)$("#cv_mpick").onclick=pick("cv_map","usmap");
   $("#cv_all").onchange=()=>{if(last)show(last)};
+  $("#cv_src").oninput=draw;draw();$("#cv_src").focus();
+  (async()=>{
+    if(rel){const ch=await api(`/api/choices?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(cur)}`).catch(()=>null);if(ch)riders=ch.riders}
+    const b=await api(`/api/browse?assets=1&dir=${encodeURIComponent(dir)}&limit=300`).catch(()=>null);if(b)near=b.items.filter(i=>i.asset).map(i=>i.pkg);
+    if($("#cv_pick"))draw()})();
 }
 async function brAct(a,it){
   if(a==="extract"){
@@ -615,7 +629,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v107";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v108";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_retoc").value=ST.retoc||"";$("#s_usmap").value=ST.usmap||"";retocInfo();$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const g=ST.game_id||"gp24",keep=["riders","check","browse","loc","db","setup"];$("#s_gameid").value=g;$$("nav button").forEach(b=>b.style.display=(g==="gp24"||keep.includes(b.dataset.t))?"":"none");if(g!=="gp24"&&!keep.includes(($$("nav button.on")[0]||{}).dataset?.t))tab(ST.open?"riders":"setup")}
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}
@@ -776,13 +790,13 @@ function valsPick(rel){                       // Copy values from… for one ass
   const row=bindings.find(b=>b.rel===rel);
   api(`/api/members?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(cur)}`).then(ms=>{
     ms=ms.filter(m=>m.exists);
-    if(ms.length===1){valDlg(ms[0].pkg);return}
+    if(ms.length===1){valDlg(ms[0].pkg,ms[0].main?rel:"");return}
     ask(`<h3>Copy values · ${esc(row.table)} · ${esc(cur)}</h3>
       <div class="help" style="margin:0 0 8px">Click the asset to copy values into.</div>
       <div class="pick" id="v_pick" style="max-height:380px"></div>`,[{label:"Close"}]);
     $("#v_pick").innerHTML=ms.map(m=>`<div data-p="${esc(m.pkg)}"><b>${m.main?"★ ":"&nbsp;&nbsp;&nbsp;"}${esc(m.pkg.split("/").pop())}</b>
       <span class="tag">${esc(m.kind)}</span> <span class="tag ${m.origin==="unsaved"?"warn":""}">${esc(m.origin)}</span></div>`).join("");
-    $$("#v_pick div").forEach(d=>d.onclick=()=>valDlg(d.dataset.p));
+    $$("#v_pick div").forEach(d=>d.onclick=()=>valDlg(d.dataset.p,ms.find(m=>m.pkg===d.dataset.p)?.main?rel:""));
   }).catch(e=>toast(e.message,"bad"));
 }
 function editDlg(rel){
