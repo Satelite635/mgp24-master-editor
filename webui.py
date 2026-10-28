@@ -13,13 +13,14 @@ import uprops as U
 import audioport as AP
 import bnkport as BP
 
-VERSION = "v105"
+VERSION = "v112"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
 import projfile as PJ
 import mgp_retoc as MR
 import fontswap as FS
+import valcopy as VC
 
 HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))   # _MEIPASS: inside the .exe
 PER_GAME = ("mod_folder", "paks_dir", "include_patch", "game")       # Setup fields each game keeps for itself
@@ -186,8 +187,9 @@ def _pick_result(S, kind, path):
 def _pick_powershell(kind, start):
     """Windows fallback when Python has no tkinter: the system folder/file dialogs through PowerShell."""
     q = lambda s: "'" + s.replace("'", "''") + "'"
-    if kind in ("file", "asset", "game", "font"):
-        flt = ("Unreal assets (*.uasset)|*.uasset" if kind == "asset" else
+    if kind in ("file", "asset", "game", "font", "uasset", "usmap"):
+        flt = ("Unreal assets (*.uasset)|*.uasset" if kind in ("asset", "uasset") else
+               "Mappings (*.usmap)|*.usmap|All files (*.*)|*.*" if kind == "usmap" else
                "Game or shortcut (*.exe;*.lnk;*.url)|*.exe;*.lnk;*.url|All files (*.*)|*.*" if kind == "game" else
                "Fonts (*.ttf;*.otf;*.ufont)|*.ttf;*.otf;*.ufont|All files (*.*)|*.*" if kind == "font" else
                "Programs (*.exe)|*.exe|All files (*.*)|*.*")
@@ -215,7 +217,8 @@ def make_api(S):
         cfg = S.load_cfg()
         g = S.P.game if S.P else cfg.get("game_id", "gp24")
         games = {x: dict(mod_folder=cfg.get(gk("mod_folder", x), ""), paks_dir=cfg.get(gk("paks_dir", x), ""),
-                         include_patch=cfg.get(gk("include_patch", x), True), game=cfg.get(gk("game", x), "")) for x in C.GAMES}
+                         include_patch=cfg.get(gk("include_patch", x), True), game=cfg.get(gk("game", x), ""),
+                         usmap=cfg.get(gk("usmap", x), "")) for x in C.GAMES}
         return dict(version=VERSION, uassetgui=cfg.get("uassetgui", ""), retoc=cfg.get("retoc", ""), retoc_found=MR.find(cfg.get("retoc", "")), open=bool(S.P), games=games, **games[g],
                     has_key=bool(cfg.get("aes_key")), game_id=g,
                     paks=bool(S.P and S.P.paks), root=S.P.root if S.P else "")
@@ -685,6 +688,112 @@ def make_api(S):
         missing = sorted(want - set(done))
         return dict(done=done, missing=missing, src=src, projectors=_proj_rows(_proj_reparse(a)[1]))
 
+    def fix_names(q, b):
+        """Fix every GP24 .uasset in the mod folder for UAssetGUI: correct the name hashes, and point uses of a
+        duplicate name at its first copy (staged like other edits)."""
+        P = S.need()
+        gp24_only(P, "fixing name tables")
+        out, checked, bad, left = [], 0, 0, []
+        for rel in P.src.find("Content", ".uasset"):
+            if P.src.origin(rel) not in ("mod folder", "unsaved"):
+                continue
+            checked += 1
+            try:
+                ua = C.UAsset(P.src.read(rel))
+                stem = rel[:-len(".uasset")]
+                ux = P.src.read(stem + ".uexp") if P.src.exists(stem + ".uexp") else b""
+            except Exception:
+                bad += 1
+                continue
+            own = ua.fix_own_name(stem.rsplit("/", 1)[1], ux)
+            hashes = ua.fix_name_hashes()
+            merged, skipped = ua.merge_duplicate_names(ux)
+            if skipped:
+                left.append(dict(rel=rel, names=skipped))
+            if hashes or merged or own:
+                full = P.src.loose(rel)
+                os.makedirs(os.path.dirname(full), exist_ok=True)
+                P.backup(full)
+                with open(full, "wb") as f:
+                    f.write(ua.to_bytes())
+                out.append(dict(rel=rel, hashes=hashes, merged=merged, own=own))
+        return dict(files=out, checked=checked, unreadable=bad, left=left)
+
+    def _usmap(path, what):
+        path = (path or "").strip().strip('"')
+        if not path:
+            return None
+        if not os.path.isfile(path):
+            raise C.MgpError("%s .usmap not found: %s" % (what, path))
+        try:
+            import usmap as UM
+            return UM.load(path)
+        except Exception as e:
+            raise C.MgpError("%s .usmap could not be read: %s" % (what, e))
+
+    def copy_values(q, b):
+        """Copy fixed-size values (matched by property name) from `src` (a .uasset on disk or a /Game/ path) into
+        the asset `dst`, keeping dst's own header/names/imports. apply=false: only the report. Staged like edits."""
+        P = S.need()
+        cfg = S.load_cfg()
+        if b.get("usmap") is not None:                       # remembered per game, like the other paths
+            cfg[gk("usmap", P.game)] = str(b["usmap"]).strip().strip('"')
+            S.save_cfg(cfg)
+        umap = _usmap(cfg.get(gk("usmap", P.game), ""), "Game") if P.game != "gp24" else None
+        smap = _usmap(b.get("src_usmap"), "Source") or umap
+        stem = C.game_to_rel(C.normalize_target(b["dst"]))
+        rel = stem + ".uasset"
+        if P.game != "gp24":
+            P.no_legacy(stem)
+        if not P.src.exists(rel):
+            raise C.MgpError("asset not found in mod folder or paks: " + b["dst"])
+        zen = P.game != "gp24"
+        if not zen and not P.src.exists(stem + ".uexp"):
+            raise C.MgpError("%s has no .uexp" % stem.rsplit("/", 1)[-1])
+        dua = P.src.read(rel)
+        dux = None if zen else P.src.read(stem + ".uexp")
+        src = (b.get("src") or "").strip().strip('"')
+        if not src:
+            raise C.MgpError("choose the asset to copy values from")
+        sname = ""
+        if os.path.isfile(src):
+            if not src.lower().endswith(".uasset"):
+                raise C.MgpError("choose a .uasset file")
+            sua = open(src, "rb").read()
+            ue = src[:-7] + ".uexp"
+            sux = open(ue, "rb").read() if os.path.isfile(ue) else None
+            sname = src
+        elif src.startswith("/Game/") or b.get("rel") and src in P.table(b["rel"]).rows:
+            if not src.startswith("/Game/"):                     # another rider: their asset in the same table
+                tgt = P.table(b["rel"]).target(src)
+                if not is_game(tgt):
+                    raise C.MgpError("%s has no asset in %s" % (src, tname(b["rel"])))
+                sname = "%s (%s)" % (tgt.partition(".")[0], src)
+                src = tgt.partition(".")[0]
+            sst = C.game_to_rel(C.normalize_target(src))
+            if not P.src.exists(sst + ".uasset"):
+                raise C.MgpError("source asset not found in mod folder or paks: " + src)
+            sua = P.src.read(sst + ".uasset")
+            sux = P.src.read(sst + ".uexp") if not zen and P.src.exists(sst + ".uexp") else None
+            sname = sname or src
+        else:
+            raise C.MgpError("copy from: a rider, a /Game/... path or a .uasset file on this PC (not found: %s)" % src)
+        sdoc = VC.Doc(sua, sux, smap)
+        ddoc = VC.Doc(dua, dux, umap)
+        only = [o.strip() for o in (b.get("only") or []) if o.strip()]
+        r = VC.copy(sdoc, ddoc, only=only or None, write=bool(b.get("apply")), refs=not b.get("keep_paths"))
+        if b.get("apply") and r["written"]:
+            ua, ux = ddoc.files()
+            files = [(rel, ua)] if ux is None else [(rel, ua), (stem + ".uexp", ux)]
+            for path, data in files:
+                full = P.src.loose(path)
+                os.makedirs(os.path.dirname(full), exist_ok=True)
+                P.backup(full)
+                with open(full, "wb") as f:
+                    f.write(data)
+        r.update(src=sname, dst=C.normalize_target(b["dst"]), origin=P.src.origin(rel))
+        return r
+
     def refs(q, b):
         """Background job: which assets (mod folder + paks) mention a package name in their name table."""
         P = S.need()
@@ -892,6 +1001,12 @@ def make_api(S):
                 elif kind == "font":
                     path = filedialog.askopenfilename(initialdir=start, title="Choose the font file",
                                                       filetypes=[("Fonts", "*.ttf *.otf *.ufont"), ("All files", "*.*")], parent=root)
+                elif kind == "uasset":
+                    path = filedialog.askopenfilename(initialdir=start, title="Choose the .uasset to copy values from",
+                                                      filetypes=[("Unreal assets", "*.uasset"), ("All files", "*.*")], parent=root)
+                elif kind == "usmap":
+                    path = filedialog.askopenfilename(initialdir=start, title="Choose the game's .usmap",
+                                                      filetypes=[("Mappings", "*.usmap"), ("All files", "*.*")], parent=root)
                 elif kind == "file":
                     path = filedialog.askopenfilename(initialdir=start, title="Choose the file",
                                                       filetypes=[("Programs", "*.exe"), ("All files", "*.*")], parent=root)
@@ -1901,8 +2016,11 @@ def make_api(S):
             cfg[gk("game", g)] = str(b["game"]).strip().strip('"')
         if "retoc" in b:
             cfg["retoc"] = str(b["retoc"]).strip().strip('"')
+        if "usmap" in b:
+            cfg[gk("usmap", g)] = str(b["usmap"]).strip().strip('"')
         S.save_cfg(cfg)
-        return dict(uassetgui=cfg.get("uassetgui", ""), game=cfg.get(gk("game", g), ""), retoc=cfg.get("retoc", ""), retoc_found=MR.find(cfg.get("retoc", "")))
+        return dict(uassetgui=cfg.get("uassetgui", ""), game=cfg.get(gk("game", g), ""), retoc=cfg.get("retoc", ""), retoc_found=MR.find(cfg.get("retoc", "")),
+                    usmap=cfg.get(gk("usmap", g), ""))
 
     def _lnk_target(path):
         """(target, arguments, working dir) of a Windows .lnk shortcut."""
@@ -2143,7 +2261,7 @@ def make_api(S):
         return dict(value=val)
 
     return {
-        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("GET", "/api/fontswap"): fontswap_list, ("POST", "/api/fontswap/check"): fontswap_check, ("POST", "/api/fontswap/apply"): fontswap_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("GET", "/api/proj/rider"): proj_rider, ("POST", "/api/proj/set"): proj_set, ("POST", "/api/proj/copy"): proj_copy, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port, ("GET", "/api/bank/scan"): bank_scan, ("POST", "/api/bank/port"): bank_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
+        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("GET", "/api/fontswap"): fontswap_list, ("POST", "/api/fontswap/check"): fontswap_check, ("POST", "/api/fontswap/apply"): fontswap_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("GET", "/api/proj/rider"): proj_rider, ("POST", "/api/proj/set"): proj_set, ("POST", "/api/proj/copy"): proj_copy, ("POST", "/api/copyvalues"): copy_values, ("POST", "/api/fixnames"): fix_names, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port, ("GET", "/api/bank/scan"): bank_scan, ("POST", "/api/bank/port"): bank_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
         ("POST", "/api/settings"): settings, ("GET", "/api/changes"): changes, ("POST", "/api/save"): save,
         ("POST", "/api/discard"): discard, ("POST", "/api/quit"): quit_, ("POST", "/api/open"): open_, ("GET", "/api/pilots"): pilots,
         ("GET", "/api/bindings"): bindings, ("GET", "/api/choices"): choices, ("POST", "/api/replace"): replace,

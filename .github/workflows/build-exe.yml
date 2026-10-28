@@ -11,7 +11,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pyinstaller pycryptodome blake3
+      - run: pip install pyinstaller pycryptodome blake3 zstandard
       - run: python build_exe.py
       - name: Smoke test (serves the page)
         shell: pwsh

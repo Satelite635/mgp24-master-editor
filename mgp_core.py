@@ -28,6 +28,12 @@ class MgpError(Exception):
 
 
 # ----------------------------------------------------------------- .uasset
+def _case_hash(text):
+    """Case-preserving name hash (FCrc::StrCrc32 of the TCHARs as 4 bytes each); checked on real GP24-format names."""
+    import zlib
+    return zlib.crc32(text.encode("utf-32-le")) & 0xFFFF
+
+
 def _name_hash(text):
     """Non-case-preserving name hash as stored in the name table (verified against 304 real names)."""
     global _HT
@@ -131,6 +137,7 @@ class UAsset:
             raise MgpError("same-length rename required: %r -> %r" % (n["text"], new))
         self.data[n["pos"]:n["pos"] + n["nbytes"]] = new.encode("ascii")
         n["text"] = new
+        struct.pack_into("<HH", self.data, n["pos"] + n["nbytes"] + 1, _name_hash(new), _case_hash(new))
 
     def _check_layout(self):
         n = self._get("exportcount")
@@ -155,7 +162,7 @@ class UAsset:
 
     @staticmethod
     def _entry(text):
-        return struct.pack("<i", len(text) + 1) + text.encode("ascii") + b"\0" + struct.pack("<HH", _name_hash(text), 0)
+        return struct.pack("<i", len(text) + 1) + text.encode("ascii") + b"\0" + struct.pack("<HH", _name_hash(text), _case_hash(text))
 
     def append_name(self, text):
         """Add a name at the end of the name table; returns its index. Existing indices do not change."""
@@ -188,6 +195,92 @@ class UAsset:
         n["pos"], n["nbytes"], n["text"] = start + 4, len(text), text
         self.names_end += delta
         self._shift_after(at, delta)
+
+    def fix_name_hashes(self):
+        """Give every ASCII name its correct pair of hashes. Names added by tool versions before v110 had a zero
+        case-preserving hash, which makes UAssetGUI warn "Failed to maintain binary equality". -> names fixed."""
+        fixed = 0
+        for n in self.names:
+            if n["wide"]:
+                continue
+            at = n["pos"] + n["nbytes"] + 1
+            want = (_name_hash(n["text"]), _case_hash(n["text"]))
+            if struct.unpack_from("<HH", self.data, at) != want:
+                struct.pack_into("<HH", self.data, at, *want)
+                fixed += 1
+        return fixed
+
+    def _header_name_refs(self):
+        """Positions of every FName index in the header: imports (class package, class, object name),
+        exports (object name) and soft package references."""
+        io, eo = self._get("importoff"), self._get("exportoff")
+        out = [io + i * 28 + k for i in range(self._get("importcount")) for k in (0, 8, 20)]
+        out += [eo + i * self.EXPORT_SIZE + 16 for i in range(self._get("exportcount"))]
+        so = self._get("softoff")
+        if so:
+            out += [so + i * 8 for i in range(self._get("softcount"))]
+        return out
+
+    def duplicate_names(self):
+        """{duplicate index: index of the first entry with the same text}."""
+        first, dups = {}, {}
+        for i, n in enumerate(self.names):
+            if n["text"] in first:
+                dups[i] = first[n["text"]]
+            else:
+                first[n["text"]] = i
+        return dups
+
+    def merge_duplicate_names(self, uexp=b""):
+        """Point header references to a duplicate name at its first copy. UAssetGUI looks names up by text,
+        so any use of a second copy fails its "binary equality" check. The game is fine either way. The
+        entries stay in the table (unused). A duplicate whose index bytes appear anywhere in the .uexp is
+        left alone, since it may be used there. -> (merged texts, skipped texts)."""
+        dups = self.duplicate_names()
+        merged, skipped = [], []
+        refs = self._header_name_refs()
+        for d, f in dups.items():
+            text = self.names[d]["text"]
+            if struct.pack("<i", d) in uexp:
+                skipped.append(text)
+                continue
+            hit = False
+            for p in refs:
+                if struct.unpack_from("<i", self.data, p)[0] == d:
+                    struct.pack_into("<i", self.data, p, f)
+                    hit = True
+            if hit:
+                merged.append(text)
+        return merged, skipped
+
+    def rename_object_name(self, old, new, uexp=b""):
+        """Give header uses of name `old` (export/import object names) the text `new`. Rewritten in place when
+        the .uexp cannot be using it; otherwise `new` is added (or reused) and only the header uses move."""
+        texts = self.texts()
+        if old not in texts or old == new:
+            return False
+        i = texts.index(old)
+        if new not in texts and struct.pack("<i", i) not in uexp:
+            self.replace_name(i, new)
+            return True
+        j = texts.index(new) if new in texts else self.append_name(new)
+        for p in self._header_name_refs():                # after append_name: offsets moved
+            if struct.unpack_from("<i", self.data, p)[0] == i:
+                struct.pack_into("<i", self.data, p, j)
+        return True
+
+    def fix_own_name(self, base, uexp=b""):
+        """A copy made by Browse -> clone before v112 kept the original's object name (mat_livery009 inside
+        mat_livery010). Rename it when the file has exactly one top-level export. -> old name or None."""
+        eo = self._get("exportoff")
+        top = [i for i in range(self._get("exportcount"))
+               if struct.unpack_from("<i", self.data, eo + i * self.EXPORT_SIZE + 12)[0] == 0]
+        if len(top) != 1:
+            return None
+        old = self.names[struct.unpack_from("<i", self.data, eo + top[0] * self.EXPORT_SIZE + 16)[0]]["text"]
+        if old == base or old.startswith("Default__"):
+            return None
+        return old if self.rename_object_name(old, base, uexp) else None
 
     def to_bytes(self):
         return bytes(self.data)
@@ -838,6 +931,10 @@ class Project:
             raise MgpError("package name not found inside " + old_pkg.rsplit("/", 1)[1])
         for i in idxs:
             ua.replace_name(i, new_pkg)
+        ux = self.src.read(stem_old + ".uexp") if self.src.exists(stem_old + ".uexp") else b""
+        ob, nb = old_pkg.rsplit("/", 1)[1], new_pkg.rsplit("/", 1)[1]
+        for a, b in ((ob, nb), (ob + "_C", nb + "_C"), ("Default__" + ob + "_C", "Default__" + nb + "_C")):
+            ua.rename_object_name(a, b, ux)                # the asset's own object (and BP class) name too
         made = []
         dst = self.src.loose(stem_new)
         os.makedirs(os.path.dirname(dst), exist_ok=True)

@@ -143,6 +143,7 @@ class Asset:
                 pkg, obj = self.object_ref(idx)
                 tag["value"] = (pkg + "." + obj) if pkg else obj
                 tag["ref"] = pkg
+                tag["idx"] = idx
                 if idx < 0:
                     tag["ref_cls"] = self.imports[-idx - 1]["cls"]
             elif t == "SoftObjectProperty":
@@ -207,8 +208,9 @@ class Asset:
                     n = struct.calcsize(fixed[inner])
                     items.append(dict(name="[%d]" % k, type=inner, value=struct.unpack_from(fixed[inner], u, q)[0], off=q, size=n, edit="num")); q += n
                 elif inner == "ObjectProperty":
-                    pkg, obj = self.object_ref(struct.unpack_from("<i", u, q)[0])
-                    items.append(dict(name="[%d]" % k, type=inner, value=(pkg + "." + obj) if pkg else obj, ref=pkg)); q += 4
+                    idx = struct.unpack_from("<i", u, q)[0]
+                    pkg, obj = self.object_ref(idx)
+                    items.append(dict(name="[%d]" % k, type=inner, value=(pkg + "." + obj) if pkg else obj, ref=pkg, idx=idx, off=q, size=4)); q += 4
                 elif inner in ("NameProperty", "EnumProperty", "ByteProperty") and (size - 4) == count * 8:
                     items.append(dict(name="[%d]" % k, type=inner, value=self._fn(q)[0])); q += 8
                 elif inner == "ByteProperty" and (size - 4) == count:
