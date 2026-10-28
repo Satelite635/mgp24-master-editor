@@ -10,7 +10,7 @@ Start it with `MGP24MasterEditor.exe` (v105+), `start.bat` (or `python motogp_ma
 - Several of my past diagnoses were wrong (see `docs/HUD_PENALTIES.md`). State guesses as guesses; prefer adding diagnostics (what was skipped/why) over speculating.
 - After each change: bump the version, rebuild the zip, send it. Version lives in TWO places and must match:
   `VERSION = "vNN"` in `webui.py` and `HV="vNN"` in `webui.html` (page shows a red "close the tool and start it again" if they differ).
-  Current: **v112**.
+  Current: **v113**.
 - Deliverable convention: `./build_zip.sh` (builds `../motogp_master_editor.zip` incl. the Blender add-on zip), then send the zip.
 - Windows exe (since v105): built only on Windows, by GitHub Actions `.github/workflows/build-exe.yml` on every push (`build_exe.py`, PyInstaller). Artifact = exe + README + add-on zip. Can't be built/tested here; a Linux `python build_exe.py` makes a Linux binary for smoke tests only.
 
