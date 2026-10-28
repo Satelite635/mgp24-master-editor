@@ -156,6 +156,16 @@ m, sk = d2.merge_duplicate_names(mx2)
 ok(m == ["meshB_long_name"] and not sk and struct.unpack_from("<i", d2.data, d2._get("importoff") + mi * 28 + 20)[0] == first
    and len(d2.to_bytes()) == len(d.to_bytes()), "header use moved to the first copy, same size")
 ok(next(x for x in V.Doc(d2.to_bytes(), mx2).props if x["name"] == "Mesh")["value"] == "/Game/m/meshB_long_name.meshB_long_name", "still reads the same mesh")
+# Browse -> clone with a new name: the asset's own object name follows the package name
+c = UAsset(ma)
+on = c.export_object_names()[0]
+ok(c.rename_object_name(on, on + "_copy2", mx) and c.export_object_names()[0] == on + "_copy2" and on not in c.texts()
+   and not c.duplicate_names() and V.Doc(c.to_bytes(), mx).cls == "ProjectorsDataSource_C", "export name renamed in place (%s)" % on)
+c = UAsset(ma)
+ok(c.rename_object_name(on, on + "_copy2", struct.pack("<i", c.texts().index(on))) and c.export_object_names()[0] == on + "_copy2"
+   and on in c.texts() and not c.duplicate_names() and V.Doc(c.to_bytes(), mx).cls == "ProjectorsDataSource_C", "kept when the .uexp may use it; export moved to a new name")
+c = UAsset(ma)
+ok(c.fix_own_name("newbase", mx) == on and c.export_object_names()[0] == "newbase" and c.fix_own_name("newbase", mx) is None, "Fix name tables renames an old clone's object name once")
 r = V.copy(V.Doc(mb, mxb), V.Doc(ma, mx), refs=False, write=False)
 ok(not any(x["path"] == "Mesh" and x["status"] == "changed" for x in r["rows"]), "refs=False keeps the path")
 

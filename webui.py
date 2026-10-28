@@ -13,7 +13,7 @@ import uprops as U
 import audioport as AP
 import bnkport as BP
 
-VERSION = "v111"
+VERSION = "v112"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -705,17 +705,18 @@ def make_api(S):
             except Exception:
                 bad += 1
                 continue
+            own = ua.fix_own_name(stem.rsplit("/", 1)[1], ux)
             hashes = ua.fix_name_hashes()
             merged, skipped = ua.merge_duplicate_names(ux)
             if skipped:
                 left.append(dict(rel=rel, names=skipped))
-            if hashes or merged:
+            if hashes or merged or own:
                 full = P.src.loose(rel)
                 os.makedirs(os.path.dirname(full), exist_ok=True)
                 P.backup(full)
                 with open(full, "wb") as f:
                     f.write(ua.to_bytes())
-                out.append(dict(rel=rel, hashes=hashes, merged=merged))
+                out.append(dict(rel=rel, hashes=hashes, merged=merged, own=own))
         return dict(files=out, checked=checked, unreadable=bad, left=left)
 
     def _usmap(path, what):

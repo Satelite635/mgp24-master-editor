@@ -253,6 +253,35 @@ class UAsset:
                 merged.append(text)
         return merged, skipped
 
+    def rename_object_name(self, old, new, uexp=b""):
+        """Give header uses of name `old` (export/import object names) the text `new`. Rewritten in place when
+        the .uexp cannot be using it; otherwise `new` is added (or reused) and only the header uses move."""
+        texts = self.texts()
+        if old not in texts or old == new:
+            return False
+        i = texts.index(old)
+        if new not in texts and struct.pack("<i", i) not in uexp:
+            self.replace_name(i, new)
+            return True
+        j = texts.index(new) if new in texts else self.append_name(new)
+        for p in self._header_name_refs():                # after append_name: offsets moved
+            if struct.unpack_from("<i", self.data, p)[0] == i:
+                struct.pack_into("<i", self.data, p, j)
+        return True
+
+    def fix_own_name(self, base, uexp=b""):
+        """A copy made by Browse -> clone before v112 kept the original's object name (mat_livery009 inside
+        mat_livery010). Rename it when the file has exactly one top-level export. -> old name or None."""
+        eo = self._get("exportoff")
+        top = [i for i in range(self._get("exportcount"))
+               if struct.unpack_from("<i", self.data, eo + i * self.EXPORT_SIZE + 12)[0] == 0]
+        if len(top) != 1:
+            return None
+        old = self.names[struct.unpack_from("<i", self.data, eo + top[0] * self.EXPORT_SIZE + 16)[0]]["text"]
+        if old == base or old.startswith("Default__"):
+            return None
+        return old if self.rename_object_name(old, base, uexp) else None
+
     def to_bytes(self):
         return bytes(self.data)
 
@@ -902,6 +931,10 @@ class Project:
             raise MgpError("package name not found inside " + old_pkg.rsplit("/", 1)[1])
         for i in idxs:
             ua.replace_name(i, new_pkg)
+        ux = self.src.read(stem_old + ".uexp") if self.src.exists(stem_old + ".uexp") else b""
+        ob, nb = old_pkg.rsplit("/", 1)[1], new_pkg.rsplit("/", 1)[1]
+        for a, b in ((ob, nb), (ob + "_C", nb + "_C"), ("Default__" + ob + "_C", "Default__" + nb + "_C")):
+            ua.rename_object_name(a, b, ux)                # the asset's own object (and BP class) name too
         made = []
         dst = self.src.loose(stem_new)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
