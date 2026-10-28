@@ -139,6 +139,23 @@ back = V.Doc(ma2, mx2)
 mesh = next(x for x in back.props if x["name"] == "Mesh")
 ok(mesh["value"] == "/Game/m/meshB_long_name.meshB_long_name", "target now points at the source's mesh: " + mesh["value"])
 ok(PJ.parse(ma2, mx2)[1][0]["tag"] and not V.copy(V.Doc(mb, mxb), back, write=False)["changes"], "still parses; nothing left to copy")
+ok(not h.duplicate_names(), "repoint adds no duplicate names")
+# a name that is in the table twice, with the mesh import's object name pointing at the second copy
+d = UAsset(ma2)
+io = d._get("importoff")
+mi = next(i for i in range(d._get("importcount")) if d.names[struct.unpack_from("<i", d.data, io + i * 28 + 20)[0]]["text"] == "meshB_long_name")
+first = struct.unpack_from("<i", d.data, io + mi * 28 + 20)[0]
+dup = d.append_name("meshB_long_name")
+io = d._get("importoff")
+struct.pack_into("<i", d.data, io + mi * 28 + 20, dup)
+ok(d.duplicate_names() == {dup: first}, "duplicate found")
+m, sk = UAsset(d.to_bytes()).merge_duplicate_names(struct.pack("<i", dup))
+ok(not m and sk == ["meshB_long_name"], "left alone when its index may be used in the .uexp")
+d2 = UAsset(d.to_bytes())
+m, sk = d2.merge_duplicate_names(mx2)
+ok(m == ["meshB_long_name"] and not sk and struct.unpack_from("<i", d2.data, d2._get("importoff") + mi * 28 + 20)[0] == first
+   and len(d2.to_bytes()) == len(d.to_bytes()), "header use moved to the first copy, same size")
+ok(next(x for x in V.Doc(d2.to_bytes(), mx2).props if x["name"] == "Mesh")["value"] == "/Game/m/meshB_long_name.meshB_long_name", "still reads the same mesh")
 r = V.copy(V.Doc(mb, mxb), V.Doc(ma, mx), refs=False, write=False)
 ok(not any(x["path"] == "Mesh" and x["status"] == "changed" for x in r["rows"]), "refs=False keeps the path")
 

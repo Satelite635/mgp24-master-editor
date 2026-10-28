@@ -13,7 +13,7 @@ import uprops as U
 import audioport as AP
 import bnkport as BP
 
-VERSION = "v110"
+VERSION = "v111"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -689,27 +689,34 @@ def make_api(S):
         return dict(done=done, missing=missing, src=src, projectors=_proj_rows(_proj_reparse(a)[1]))
 
     def fix_names(q, b):
-        """Correct the name hashes of every GP24 .uasset in the mod folder (staged like other edits)."""
+        """Fix every GP24 .uasset in the mod folder for UAssetGUI: correct the name hashes, and point uses of a
+        duplicate name at its first copy (staged like other edits)."""
         P = S.need()
-        gp24_only(P, "fixing name hashes")
-        out, checked, bad = [], 0, 0
+        gp24_only(P, "fixing name tables")
+        out, checked, bad, left = [], 0, 0, []
         for rel in P.src.find("Content", ".uasset"):
             if P.src.origin(rel) not in ("mod folder", "unsaved"):
                 continue
             checked += 1
             try:
                 ua = C.UAsset(P.src.read(rel))
+                stem = rel[:-len(".uasset")]
+                ux = P.src.read(stem + ".uexp") if P.src.exists(stem + ".uexp") else b""
             except Exception:
                 bad += 1
                 continue
-            if ua.fix_name_hashes():
+            hashes = ua.fix_name_hashes()
+            merged, skipped = ua.merge_duplicate_names(ux)
+            if skipped:
+                left.append(dict(rel=rel, names=skipped))
+            if hashes or merged:
                 full = P.src.loose(rel)
                 os.makedirs(os.path.dirname(full), exist_ok=True)
                 P.backup(full)
                 with open(full, "wb") as f:
                     f.write(ua.to_bytes())
-                out.append(rel)
-        return dict(files=out, checked=checked, unreadable=bad)
+                out.append(dict(rel=rel, hashes=hashes, merged=merged))
+        return dict(files=out, checked=checked, unreadable=bad, left=left)
 
     def _usmap(path, what):
         path = (path or "").strip().strip('"')

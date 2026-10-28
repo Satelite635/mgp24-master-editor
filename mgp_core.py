@@ -210,6 +210,49 @@ class UAsset:
                 fixed += 1
         return fixed
 
+    def _header_name_refs(self):
+        """Positions of every FName index in the header: imports (class package, class, object name),
+        exports (object name) and soft package references."""
+        io, eo = self._get("importoff"), self._get("exportoff")
+        out = [io + i * 28 + k for i in range(self._get("importcount")) for k in (0, 8, 20)]
+        out += [eo + i * self.EXPORT_SIZE + 16 for i in range(self._get("exportcount"))]
+        so = self._get("softoff")
+        if so:
+            out += [so + i * 8 for i in range(self._get("softcount"))]
+        return out
+
+    def duplicate_names(self):
+        """{duplicate index: index of the first entry with the same text}."""
+        first, dups = {}, {}
+        for i, n in enumerate(self.names):
+            if n["text"] in first:
+                dups[i] = first[n["text"]]
+            else:
+                first[n["text"]] = i
+        return dups
+
+    def merge_duplicate_names(self, uexp=b""):
+        """Point header references to a duplicate name at its first copy. UAssetGUI looks names up by text,
+        so any use of a second copy fails its "binary equality" check. The game is fine either way. The
+        entries stay in the table (unused). A duplicate whose index bytes appear anywhere in the .uexp is
+        left alone, since it may be used there. -> (merged texts, skipped texts)."""
+        dups = self.duplicate_names()
+        merged, skipped = [], []
+        refs = self._header_name_refs()
+        for d, f in dups.items():
+            text = self.names[d]["text"]
+            if struct.pack("<i", d) in uexp:
+                skipped.append(text)
+                continue
+            hit = False
+            for p in refs:
+                if struct.unpack_from("<i", self.data, p)[0] == d:
+                    struct.pack_into("<i", self.data, p, f)
+                    hit = True
+            if hit:
+                merged.append(text)
+        return merged, skipped
+
     def to_bytes(self):
         return bytes(self.data)
 
