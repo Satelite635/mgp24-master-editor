@@ -485,7 +485,7 @@ function valDlg(dst,rel){                    // rel: binding table whose row poi
       `</table>${rows.length>500?`<div class="help">${rows.length-500} more rows not shown</div>`:""}</div>`};
   let last=null,riders=[],near=[];
   const run=async apply=>{const src=$("#cv_src").value.trim();if(!src){toast("Pick or type what to copy values from","bad");return false}
-    const body={dst,src,apply,rel:rel||"",src_usmap:$("#cv_smap").value.trim(),only:$("#cv_only").value.split(",")};
+    const body={dst,src,apply,rel:rel||"",keep_paths:$("#cv_keep").checked,src_usmap:$("#cv_smap").value.trim(),only:$("#cv_only").value.split(",")};
     if(!gp24){body.usmap=$("#cv_map").value.trim();ST.usmap=body.usmap}
     last=await api("/api/copyvalues",body);$("#cv_pick").style.display="none";show(last);
     if(apply)toast(last.written?`Copied ${last.written} value(s) into ${name} - press Save to keep it`:"Nothing was changed",last.written?"ok":"bad");
@@ -493,11 +493,12 @@ function valDlg(dst,rel){                    // rel: binding table whose row poi
   ask(`<h3>Copy values into ${esc(name)}</h3><div class="sub">now: ${esc(dst)}</div>
     <input type="text" id="cv_src" placeholder="type to filter, or paste another rider / /Game/… path / a .uasset file on your PC" autocomplete="off">
     <div class="pick" id="cv_pick"></div>
-    <div class="help">Pick where the values come from. This file stays as it is (names, paths, textures); only numbers, vectors, colours and transforms with the same property name are overwritten. Press Preview to see what would change.</div>
+    <div class="help">Pick where the values come from. Numbers, vectors, colours and transforms with the same property name are overwritten. MotoGP 24: paths (mesh, material, anim blueprint ...) are changed too when both point at the same kind of asset. Press Preview to see what would change.</div>
     <details style="margin-top:6px"><summary class="help" style="cursor:pointer">More options</summary>
       ${gp24?"":`<div class="pathrow"><input type="text" id="cv_map" placeholder="this game's .usmap (needed for MotoGP 25/26)" value="${esc(ST.usmap||"")}"><button class="b" id="cv_mpick">Choose…</button></div>`}
       <div class="pathrow"><input type="text" id="cv_smap" placeholder="source .usmap - only if the source comes from another MotoGP 25/26 game (e.g. MotoGP 26)"><button class="b" id="cv_spick">Choose…</button></div>
       <input type="text" id="cv_only" placeholder="copy only these, comma separated (e.g. TaggedProjectors[FrontPlate])" autocomplete="off" style="width:100%">
+      <label style="display:block;margin-top:6px"><input type="checkbox" id="cv_keep"> keep this file's paths (don't repoint meshes, materials, ... to the source's)</label>
       <label style="display:block;margin-top:6px"><input type="checkbox" id="cv_all"> show unchanged values in the result</label></details>
     <div id="cv_out" class="sub"></div>`,
    [{label:"Cancel"},{label:"Preview",fn:()=>run(false)},{label:"Copy",cls:"p",fn:()=>run(true)}]);
@@ -629,7 +630,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v108";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v109";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_retoc").value=ST.retoc||"";$("#s_usmap").value=ST.usmap||"";retocInfo();$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const g=ST.game_id||"gp24",keep=["riders","check","browse","loc","db","setup"];$("#s_gameid").value=g;$$("nav button").forEach(b=>b.style.display=(g==="gp24"||keep.includes(b.dataset.t))?"":"none");if(g!=="gp24"&&!keep.includes(($$("nav button.on")[0]||{}).dataset?.t))tab(ST.open?"riders":"setup")}
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}

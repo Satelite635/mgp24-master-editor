@@ -33,7 +33,8 @@ class Gp24:
         pr = self.tag("Priority", "IntProperty", struct.pack("<i", prio)) + self.struct_("Transform", "Transform", tr) + self.fn("None")
         return self.tag("Tag", "NameProperty", self.fn(tag)) + self.struct_("Projector", "VehicleCustomizationProjectorData", pr) + self.fn("None")
 
-    def build(self, projs, extra_float=None):
+    def build(self, projs, extra_float=None, mesh=None):
+        self.mesh = mesh
         items = b"".join(self.projector(*p) for p in projs)
         inner = self.fn("TaggedProjectors") + self.fn("StructProperty") + struct.pack("<ii", len(items), 0) + \
             self.fn("IgnitionTaggedProjectorData") + bytes(16) + b"\0"
@@ -41,8 +42,11 @@ class Gp24:
         body = self.tag("TaggedProjectors", "ArrayProperty", arr, self.fn("StructProperty"))
         if extra_float is not None:
             body += self.tag("TextureResidentTime", "FloatProperty", struct.pack("<f", extra_float))
+        if mesh:
+            body += self.tag("Mesh", "ObjectProperty", struct.pack("<i", -4))
         uexp = body + self.fn("None") + bytes(4) + struct.pack("<I", 0x9E2A83C1)
-        for t in ("/Script/Engine", "Package", "BlueprintGeneratedClass", "ProjectorsDataSource_C", "/Game/x/ProjectorsDataSource", "projector103_001"):
+        for t in ("/Script/Engine", "Package", "BlueprintGeneratedClass", "ProjectorsDataSource_C", "/Game/x/ProjectorsDataSource", "projector103_001",
+                  "/Script/CoreUObject", "SkeletalMesh") + ((mesh, "/Game/m/" + mesh) if mesh else ()):
             self.n(t)
         return self.header(len(uexp) - 4), uexp
 
@@ -53,6 +57,8 @@ class Gp24:
         imp = lambda cp, cn, outer, on: struct.pack("<iiiiiii", self.n(cp), 0, self.n(cn), 0, outer, self.n(on), 0)
         imports = imp("/Script/CoreUObject", "Package", 0, "/Game/x/ProjectorsDataSource") + \
             imp("/Script/Engine", "BlueprintGeneratedClass", -1, "ProjectorsDataSource_C")
+        if self.mesh:
+            imports += imp("/Script/CoreUObject", "Package", 0, "/Game/m/" + self.mesh) + imp("/Script/Engine", "SkeletalMesh", -3, self.mesh)
         fields = {}
         out = bytearray()
         out += struct.pack("<Iiiii", 0x9E2A83C1, -7, 864, 522, 0) + struct.pack("<i", 0)
@@ -61,7 +67,7 @@ class Gp24:
         out += struct.pack("<i", len(self.names)); fields["nameoff"] = len(out); out += bytes(4)
         out += bytes(8)                                                     # gatherable text
         out += struct.pack("<i", 1); fields["exportoff"] = len(out); out += bytes(4)
-        out += struct.pack("<i", 2); fields["importoff"] = len(out); out += bytes(4)
+        out += struct.pack("<i", 4 if self.mesh else 2); fields["importoff"] = len(out); out += bytes(4)
         fields["dependsoff"] = len(out); out += bytes(4)
         out += bytes(16) + bytes(16)                                        # soft refs, searchable, thumbnails, guid
         out += struct.pack("<i", 1) + struct.pack("<ii", 1, len(self.names))
@@ -107,6 +113,26 @@ again = V.copy(V.Doc(ub, uxb), V.Doc(ua2, ux2), write=False)
 ok(not again["changes"], "copying again changes nothing")
 only = V.copy(V.Doc(ub, uxb), V.Doc(ua, ux), only=["TaggedProjectors[FrontPlate]"])
 ok(only["changes"] and all(x["path"].startswith("TaggedProjectors[FrontPlate]") for x in only["rows"]), "copy limited to one projector")
+
+# object references: repoint the target's import (same class), header grows, .uexp keeps its size
+ma, mx = Gp24().build(A, mesh="meshA")
+mb, mxb = Gp24().build(B, mesh="meshB_long_name")
+t = V.Doc(ma, mx)
+r = V.copy(V.Doc(mb, mxb), t)
+st = {x["path"]: x for x in r["rows"]}
+ok(st.get("Mesh", {}).get("status") == "changed", "mesh reference copied (%s)" % st.get("Mesh"))
+ma2, mx2 = t.files()
+ok(len(mx2) == len(mx) and len(ma2) > len(ma), ".uexp same size, .uasset grew (%d -> %d)" % (len(ma), len(ma2)))
+from mgp_core import UAsset
+h = UAsset(ma2)
+eo = h._get("exportoff")
+ok(h._get("total") == len(ma2) and struct.unpack_from("<q", ma2, eo + 36)[0] == len(ma2), "header size and export SerialOffset follow the growth")
+back = V.Doc(ma2, mx2)
+mesh = next(x for x in back.props if x["name"] == "Mesh")
+ok(mesh["value"] == "/Game/m/meshB_long_name.meshB_long_name", "target now points at the source's mesh: " + mesh["value"])
+ok(PJ.parse(ma2, mx2)[1][0]["tag"] and not V.copy(V.Doc(mb, mxb), back, write=False)["changes"], "still parses; nothing left to copy")
+r = V.copy(V.Doc(mb, mxb), V.Doc(ma, mx), refs=False, write=False)
+ok(not any(x["path"] == "Mesh" and x["status"] == "changed" for x in r["rows"]), "refs=False keeps the path")
 
 if len(sys.argv) > 3:
     import usmap

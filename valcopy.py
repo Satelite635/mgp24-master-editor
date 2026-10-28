@@ -5,7 +5,9 @@ Properties are matched by name (path like TaggedProjectors[SidePlateRight].Proje
 Works on GP24 assets (tagged properties) and MotoGP 25/26 assets (unversioned: zen .uasset or a retoc legacy
 pair; needs the game's .usmap). Numbers, bools, vectors, colours and transforms are copied; float <-> double is
 converted (GP24 floats vs GP25 doubles). Names are copied only if the target's name table already has them.
-References (objects, soft paths), strings and texts are never copied: they point into the file's own tables."""
+Strings, texts and soft paths are never copied. Object references (GP24 only) are copied when both point at an
+import of the same class: the target's import is repointed to the source's package/object (names are appended,
+so the .uasset header grows; the .uexp keeps its size). MotoGP 25/26 references are kept."""
 import struct
 
 import uprops
@@ -48,7 +50,7 @@ class Doc:
             ex = a.parse_export(0)
         except (MgpError, struct.error, IndexError) as e:
             raise MgpError("could not read the properties: %s" % e)
-        self.cls, self.names = ex["cls"], a.names
+        self.cls, self.names, self.asset = ex["cls"], a.names, a
         self.props = [_from_tagged(n, ex["cls"], []) for n in ex["props"]]
         self.rows = None
         if ex["cls"] == "DataTable":
@@ -134,6 +136,8 @@ class Doc:
         """(uasset bytes, uexp bytes or None) as they are now."""
         if self.kind == "zen":
             return bytes(self.buf), None
+        if self.kind == "tagged":
+            return self.asset.ua.to_bytes(), bytes(self.buf)
         return self.uasset, bytes(self.buf)
 
     def flat(self):
@@ -177,6 +181,8 @@ def _from_tagged(n, cls, path):
         d.update(kind="name", off=n["off"], value=n.get("value"), type=t)
     elif t in ("StrProperty", "TextProperty"):
         d.update(kind="text", value=n.get("value"), type=t)
+    elif t == "ObjectProperty" and "idx" in n and "off" in n:
+        d.update(kind="ref", obj=True, off=n["off"], idx=n["idx"], value=n.get("value"), type=t)
     else:
         d.update(kind="ref", value=n.get("value"), type=t)
     return d
@@ -291,14 +297,16 @@ def _zero_src(spath, S):
     return False
 
 
-def plan(src, dst, only=None):
-    """Compare src with dst. -> (rows, writes); rows: dict(path, status, src, dst); writes: [(off, bytes)].
+def plan(src, dst, only=None, refs=True):
+    """Compare src with dst. -> (rows, writes, repoints); rows: dict(path, status, src, dst); writes: [(off, bytes)];
+    repoints: header changes for object references (see _plan_refs).
     status: changed / same / skipped / different / not in target / not in source / kept.
-    only: optional path prefixes to limit the copy to."""
+    only: optional path prefixes to limit the copy to. refs: also copy object references (GP24 files)."""
     S, Snodes = src.flat()
     D, Dnodes = dst.flat()
     rows, writes = [], []
     refs_kept = 0
+    obj_ops = []
 
     def want(p):
         return not only or any(p == o or p.startswith(o + ".") or p.startswith(o + "[") for o in only)
@@ -316,6 +324,10 @@ def plan(src, dst, only=None):
             if src.kind == "tagged" or d["kind"] in KEEP + ("zero", "name") or not _zero_src(path, S):
                 continue                                       # reported below as "not in source"
             s = dict(kind=d["kind"], fmt=d["fmt"], zero=True, type=d.get("type"))
+        if refs and d.get("obj") and s.get("obj") and src.kind == dst.kind == "tagged":
+            if s["value"] != d["value"]:
+                obj_ops.append((path, s, d))
+            continue
         if d["kind"] in KEEP:
             if d["kind"] == "ref" and not (isinstance(s.get("value"), str) and isinstance(d.get("value"), str)):
                 refs_kept += s.get("value") != d.get("value")  # unversioned: only an import number, not worth a row
@@ -379,10 +391,105 @@ def plan(src, dst, only=None):
                 and not (src.kind != "tagged" and _zero_src(path, S)):
             rows.append(dict(path=path, status="not in source", dst=_show(d.get("value")) if d else "",
                              why="the source does not store this%s: the target's value is kept" % (" (uses the default)" if src.kind == "tagged" else "")))
+    repoints = _plan_refs(src, dst, obj_ops, D, rows, writes) if obj_ops else []
     rows.sort(key=lambda r: r["path"])
     if refs_kept:
         rows.append(dict(path="(references)", status="kept", src="", dst="%d" % refs_kept, why=WHY_KEPT["ref"]))
-    return rows, writes
+    return rows, writes, repoints
+
+
+# ---- object references (GP24 tagged files): repoint the target's import
+def _imp(doc, idx):
+    """Raw import entry of FPackageIndex idx (< 0): dict(cp, cpn, cn, cnn, outer, on, onn) + texts."""
+    ua = doc.asset.ua
+    v = struct.unpack_from("<7i", ua.data, ua._get("importoff") + (-idx - 1) * 28)
+    e = dict(zip(("cp", "cpn", "cn", "cnn", "outer", "on", "onn"), v))
+    e["cls"] = ua.names[e["cn"]]["text"]
+    e["cpkg"] = ua.names[e["cp"]]["text"]
+    e["name"] = (ua.names[e["on"]]["text"], e["onn"])
+    return e
+
+
+def _key(doc, idx):
+    """(class package, class, package name, object name) of an import whose outer is its package, else None."""
+    e = _imp(doc, idx)
+    if e["outer"] >= 0:
+        return None
+    o = _imp(doc, e["outer"])
+    if o["cls"] != "Package" or o["outer"] != 0:
+        return None
+    return (e["cpkg"], e["cls"], o["name"], e["name"])
+
+
+def _plan_refs(src, dst, ops, D, rows, writes):
+    n_imp = len(dst.asset.imports)
+    existing = {}
+    for j in range(n_imp):
+        k = _key(dst, -(j + 1))
+        if k:
+            existing.setdefault(k, -(j + 1))
+    groups = {}
+    for path, s, d in ops:
+        si, di = s["idx"], d["idx"]
+        if si >= 0 or di >= 0:
+            rows.append(dict(path=path, status="kept", src=_show(s["value"]), dst=_show(d["value"]),
+                             why="one of them points at an object inside its own file (or at nothing): not changed"))
+            continue
+        sc, dc = _imp(src, si)["cls"], _imp(dst, di)["cls"]
+        if sc != dc:
+            rows.append(dict(path=path, status="different", src=_show(s["value"]), dst=_show(d["value"]),
+                             why="different object type (%s -> %s): the path is not changed" % (sc, dc)))
+            continue
+        k = _key(src, si)
+        if not k:
+            rows.append(dict(path=path, status="kept", src=_show(s["value"]), dst=_show(d["value"]),
+                             why="the source points at an object nested inside another one: not changed"))
+            continue
+        if k in existing:                                  # the target already imports that object: same size
+            writes.append((d["off"], struct.pack("<i", existing[k])))
+            rows.append(dict(path=path, status="changed", src=_show(s["value"]), dst=_show(d["value"]),
+                             why="path changed (the target already imports it)"))
+            continue
+        groups.setdefault(di, []).append((path, s, d, k))
+    out = []
+    users = {}
+    for p, l in D.items():
+        if l.get("obj"):
+            users.setdefault(l["idx"], []).append(p)
+    ua = dst.asset.ua
+    eo = ua._get("exportoff")
+    in_exports = set()
+    for i in range(ua._get("exportcount")):
+        in_exports.update(struct.unpack_from("<4i", ua.data, eo + i * ua.EXPORT_SIZE))   # class, super, template, outer
+    for di, g in groups.items():
+        why = ""
+        keys = {k for _, _, _, k in g}
+        e = _imp(dst, di)
+        sib = [-(j + 1) for j in range(n_imp) if -(j + 1) != di and _imp(dst, -(j + 1))["outer"] == e["outer"]]
+        if len(keys) > 1:
+            why = "this import is used by several properties that get different paths"
+        elif set(users.get(di, [])) - {p for p, _, _, _ in g}:
+            why = "the same import is also used by %s, which would change too" % ", ".join(sorted(set(users[di]) - {p for p, _, _, _ in g})[:3])
+        elif len(dst.asset.exports) > 1:
+            why = "the target has several exports (only the first is compared)"
+        elif di in in_exports:
+            why = "the export table uses this import"
+        elif e["outer"] >= 0 or _imp(dst, e["outer"])["cls"] != "Package":
+            why = "the target points at an object nested inside another one"
+        elif any(_imp(dst, j)["name"] != ("Default__" + e["name"][0], e["name"][1]) for j in sib):
+            why = "its package has other imported objects too"
+        for path, s, d, k in g:
+            rows.append(dict(path=path, status="skipped" if why else "changed", src=_show(s["value"]), dst=_show(d["value"]),
+                             why=(why + ": the path is not changed") if why else "path changed (the .uasset header grows by the new names)"))
+        if not why:
+            k = g[0][3]
+            out.append(dict(imp=di, pkg_imp=e["outer"], siblings=sib, pkg=k[2], obj=k[3]))
+    return out
+
+
+def _name_index(ua, text):
+    texts = ua.texts()
+    return texts.index(text) if text in texts else ua.append_name(text)
 
 
 def _top_missing(path, nodes):
@@ -398,9 +505,22 @@ def _split(text):
     return text, 0
 
 
-def apply(dst, writes):
+def apply(dst, writes, repoints=()):
     for off, data in writes:
         dst.buf[off:off + len(data)] = data
+    if not repoints:
+        return
+    ua = dst.asset.ua
+    plan_ = []
+    for r in repoints:                                     # append every name first: appending moves the import table
+        plan_.append((r, _name_index(ua, r["pkg"][0]), _name_index(ua, r["obj"][0]),
+                      _name_index(ua, "Default__" + r["obj"][0]) if r["siblings"] else None))
+    io = ua._get("importoff")
+    for r, pi, oi, di in plan_:
+        struct.pack_into("<ii", ua.data, io + (-r["pkg_imp"] - 1) * 28 + 20, pi, r["pkg"][1])
+        struct.pack_into("<ii", ua.data, io + (-r["imp"] - 1) * 28 + 20, oi, r["obj"][1])
+        for j in r["siblings"]:
+            struct.pack_into("<ii", ua.data, io + (-j - 1) * 28 + 20, di, r["obj"][1])
 
 
 def summary(rows):
@@ -410,15 +530,16 @@ def summary(rows):
     return out
 
 
-def copy(src, dst, only=None, write=True):
+def copy(src, dst, only=None, write=True, refs=True):
     """Plan and (if write) apply. Returns dict(rows, counts, notes, written); dst is re-read to prove it still parses."""
-    rows, writes = plan(src, dst, only)
-    if write and writes:
-        apply(dst, writes)
+    rows, writes, repoints = plan(src, dst, only, refs)
+    n = len(writes) + sum(1 for r in rows if r["status"] == "changed" and r.get("why", "").startswith("path changed (the .uasset"))
+    if write and (writes or repoints):
+        apply(dst, writes, repoints)
         ua, ux = dst.files()
         again = Doc(ua, ux, dst.umap)                          # still reads, same class
         if again.cls != dst.cls:
             raise MgpError("internal check failed: the patched file reads as %s instead of %s" % (again.cls, dst.cls))
-    return dict(rows=rows, counts=summary(rows), written=len(writes) if write else 0, changes=len(writes),
+    return dict(rows=rows, counts=summary(rows), written=n if write else 0, changes=n,
                 notes=["source: " + n for n in src.notes] + ["target: " + n for n in dst.notes],
                 src_cls=src.cls, dst_cls=dst.cls, src_kind=src.kind, dst_kind=dst.kind)

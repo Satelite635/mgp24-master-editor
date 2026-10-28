@@ -13,7 +13,7 @@ import uprops as U
 import audioport as AP
 import bnkport as BP
 
-VERSION = "v108"
+VERSION = "v109"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -750,7 +750,7 @@ def make_api(S):
         sdoc = VC.Doc(sua, sux, smap)
         ddoc = VC.Doc(dua, dux, umap)
         only = [o.strip() for o in (b.get("only") or []) if o.strip()]
-        r = VC.copy(sdoc, ddoc, only=only or None, write=bool(b.get("apply")))
+        r = VC.copy(sdoc, ddoc, only=only or None, write=bool(b.get("apply")), refs=not b.get("keep_paths"))
         if b.get("apply") and r["written"]:
             ua, ux = ddoc.files()
             files = [(rel, ua)] if ux is None else [(rel, ua), (stem + ".uexp", ux)]
