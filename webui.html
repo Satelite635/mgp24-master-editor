@@ -184,6 +184,9 @@ dialog input[type=text]{width:100%;padding:8px}
       <div class="help" style="margin:0 0 10px">Compares each rider's row with their team's row in the matching <span class="mono">…_BikeTeams</span> table (e.g. WinterTest: the team row holds the right carbon number). Only riders that differ are listed. Some tables may differ on purpose (e.g. a rider's own bike), so check before fixing.</div>
       <div class="bar"><select id="t_table" style="padding:7px"></select><select id="t_cat" style="padding:7px"><option value="">All classes</option><option value="cat001">MotoGP only</option><option value="cat002">Moto2 only</option><option value="cat003">Moto3 only</option></select><button class="b p" id="t_go">Compare</button><button class="b" id="t_fix" disabled>Fix all</button><span id="t_sum" class="tag"></span></div>
       <div id="t_out"></div>
+      <h2 style="margin-top:34px">Fix name hashes</h2>
+      <div class="help" style="margin:0 0 10px">Names this tool added before v110 (clones, repoints, copied paths) got a wrong second hash, so UAssetGUI says "Failed to maintain binary equality". This rewrites the hashes of every .uasset in your mod folder that has wrong ones (header only, same size). Press Save afterwards. MotoGP 24 files only.</div>
+      <div class="bar"><button class="b p" id="fn_go">Fix name hashes</button><span id="fn_sum" class="tag"></span></div>
     </div>
   </section>
   <section id="setup">
@@ -542,6 +545,8 @@ async function brAct(a,it){
 $("#br_go").onclick=()=>brLoad();$("#br_q").onkeydown=e=>{if(e.key==="Enter")brLoad()};$("#br_ref").onclick=()=>brLoad(undefined,true);
 
 
+$("#fn_go").onclick=guard(async()=>{const r=await api("/api/fixnames",{});$("#fn_sum").textContent=`${r.files.length} file(s) fixed, ${r.checked} checked`+(r.unreadable?`, ${r.unreadable} unreadable`:"");
+  toast(r.files.length?"Fixed "+r.files.length+" file(s) - press Save to keep it":"Nothing to fix",r.files.length?"ok":"")});
 // ---- setup: browse / open in explorer
 $$("[data-pick]").forEach(b=>b.onclick=guard(async()=>{
   const inp=$("#"+b.dataset.pick);const r=await api("/api/pick",{kind:b.dataset.kind,initial:inp.value});
@@ -630,7 +635,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v109";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v110";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_retoc").value=ST.retoc||"";$("#s_usmap").value=ST.usmap||"";retocInfo();$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const g=ST.game_id||"gp24",keep=["riders","check","browse","loc","db","setup"];$("#s_gameid").value=g;$$("nav button").forEach(b=>b.style.display=(g==="gp24"||keep.includes(b.dataset.t))?"":"none");if(g!=="gp24"&&!keep.includes(($$("nav button.on")[0]||{}).dataset?.t))tab(ST.open?"riders":"setup")}
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}

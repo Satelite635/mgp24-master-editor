@@ -28,6 +28,12 @@ class MgpError(Exception):
 
 
 # ----------------------------------------------------------------- .uasset
+def _case_hash(text):
+    """Case-preserving name hash (FCrc::StrCrc32 of the TCHARs as 4 bytes each); checked on real GP24-format names."""
+    import zlib
+    return zlib.crc32(text.encode("utf-32-le")) & 0xFFFF
+
+
 def _name_hash(text):
     """Non-case-preserving name hash as stored in the name table (verified against 304 real names)."""
     global _HT
@@ -131,6 +137,7 @@ class UAsset:
             raise MgpError("same-length rename required: %r -> %r" % (n["text"], new))
         self.data[n["pos"]:n["pos"] + n["nbytes"]] = new.encode("ascii")
         n["text"] = new
+        struct.pack_into("<HH", self.data, n["pos"] + n["nbytes"] + 1, _name_hash(new), _case_hash(new))
 
     def _check_layout(self):
         n = self._get("exportcount")
@@ -155,7 +162,7 @@ class UAsset:
 
     @staticmethod
     def _entry(text):
-        return struct.pack("<i", len(text) + 1) + text.encode("ascii") + b"\0" + struct.pack("<HH", _name_hash(text), 0)
+        return struct.pack("<i", len(text) + 1) + text.encode("ascii") + b"\0" + struct.pack("<HH", _name_hash(text), _case_hash(text))
 
     def append_name(self, text):
         """Add a name at the end of the name table; returns its index. Existing indices do not change."""
@@ -188,6 +195,20 @@ class UAsset:
         n["pos"], n["nbytes"], n["text"] = start + 4, len(text), text
         self.names_end += delta
         self._shift_after(at, delta)
+
+    def fix_name_hashes(self):
+        """Give every ASCII name its correct pair of hashes. Names added by tool versions before v110 had a zero
+        case-preserving hash, which makes UAssetGUI warn "Failed to maintain binary equality". -> names fixed."""
+        fixed = 0
+        for n in self.names:
+            if n["wide"]:
+                continue
+            at = n["pos"] + n["nbytes"] + 1
+            want = (_name_hash(n["text"]), _case_hash(n["text"]))
+            if struct.unpack_from("<HH", self.data, at) != want:
+                struct.pack_into("<HH", self.data, at, *want)
+                fixed += 1
+        return fixed
 
     def to_bytes(self):
         return bytes(self.data)

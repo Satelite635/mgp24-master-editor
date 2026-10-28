@@ -126,6 +126,14 @@ ok(len(mx2) == len(mx) and len(ma2) > len(ma), ".uexp same size, .uasset grew (%
 from mgp_core import UAsset
 h = UAsset(ma2)
 eo = h._get("exportoff")
+import zlib
+from mgp_core import _name_hash
+good = lambda u: all(struct.unpack_from("<HH", u.data, n["pos"] + n["nbytes"] + 1) == (_name_hash(n["text"]), zlib.crc32(n["text"].encode("utf-32-le")) & 0xFFFF)
+                     for n in u.names)
+ok(all(struct.unpack_from("<HH", h.data, n["pos"] + n["nbytes"] + 1) == (_name_hash(n["text"]), zlib.crc32(n["text"].encode("utf-32-le")) & 0xFFFF)
+       for n in h.names[-2:]), "appended names get both hashes (UAssetGUI binary equality)")
+u0 = UAsset(ma)
+ok(u0.fix_name_hashes() == len(u0.names) and good(u0) and len(u0.to_bytes()) == len(ma), "fix_name_hashes repairs zero hashes in place")
 ok(h._get("total") == len(ma2) and struct.unpack_from("<q", ma2, eo + 36)[0] == len(ma2), "header size and export SerialOffset follow the growth")
 back = V.Doc(ma2, mx2)
 mesh = next(x for x in back.props if x["name"] == "Mesh")
