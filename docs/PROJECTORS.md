@@ -35,3 +35,6 @@ Section "number projectors" above riding style. Lookup: `_rider_projectors` in w
 
 ## MotoGP 25 (v101)
 Zen package, one .uasset (`projfile.parse_zen`). Item layout: `00 05` [Tag FName 8] [`80 07 01` (Priority=0, zero-masked) or `00 07` + Priority i32] [`00 07`] [quat 4 doubles][translation 3][scale 3][Layers count i32][layer header u16 + zero mask][BaseColorMap import i32]. Official GP25 files (projector108_002) reference the rider's number texture directly (`MotoGP_Pedro-Acosta_Number37`); custom ones use `47` / `NU_Four_Number_Projector`. Rider lookup on GP25 data and in-game effect: untested.
+
+## Unreal preview (v114)
+Faizal 2026-11-03: projector edits DO move the number in game (the earlier "no effect" tests were the wrong file/rider). His friend previews them with a socket on the bike skeleton (BONE_CHASSIS, e.g. 82, 0, 98.42 on chassis104) at the projector's values; it matches the game. So position/rotation are in the bike mesh's (chassis bone's) space. The editor's **Preview in UE** (rider page) writes Unreal scripts that place one decal per projector there and send the moved values back (see CHANGELOG v114). Friend: "size 16-20 usually fits" (unit unclear). Decal size at projector scale 1 is not known yet.
