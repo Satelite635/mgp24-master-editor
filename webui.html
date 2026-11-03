@@ -636,7 +636,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v113";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v114";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_retoc").value=ST.retoc||"";$("#s_usmap").value=ST.usmap||"";retocInfo();$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const g=ST.game_id||"gp24",keep=["riders","check","browse","loc","db","setup"];$("#s_gameid").value=g;$$("nav button").forEach(b=>b.style.display=(g==="gp24"||keep.includes(b.dataset.t))?"":"none");if(g!=="gp24"&&!keep.includes(($$("nav button.on")[0]||{}).dataset?.t))tab(ST.open?"riders":"setup")}
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}
@@ -869,7 +869,8 @@ function projHtml(){
   projR.projectors.forEach((p,i)=>{h+=`<tr data-pi="${i}"><td class="mono">${esc(p.tag)}</td><td style="white-space:nowrap">${n3("pr_l",p.loc,64)}</td><td style="white-space:nowrap">${n3("pr_r",p.rot,58)}</td><td style="white-space:nowrap">${n3("pr_s",p.scale,52)}</td>
     <td><input type="text" class="pr_p" value="${esc(String(p.priority??""))}" style="width:36px"></td><td class="mono" title="${esc(p.texture?"in the projector file: "+p.texture+" (placeholder; the rider's number texture is drawn instead - likely, not verified)":"no texture in the projector file: this projector draws nothing")}">${esc(p.texture?(p.texture==="47"?(numTex||p.texture):p.texture):"-")}</td><td><button class="b" data-pa="${i}">Apply</button></td></tr>`});
   return h+`</table><div class="bar"><input type="text" id="pr_src" list="pr_dl" placeholder="rider or projector file to copy from" autocomplete="off" style="width:360px"><datalist id="pr_dl"></datalist> <button class="b" id="pr_copy">Copy all projectors</button>
-    <span class="help">Copies position, rotation, scale, priority (matched by name). Not verified in game yet.</span></div>`;
+    <span class="help">Copies position, rotation, scale, priority (matched by name). Not verified in game yet.</span></div>
+    <div class="bar"><button class="b" id="pr_ue">Preview in UE</button> <button class="b" id="pr_reload">Reload</button> <span class="help">Writes two Unreal scripts: one places a decal per projector on your bike mesh, the other sends the decals' values back here.</span></div>`;
 }
 function projWire(){
   if(!projR||!projR.projectors)return;
@@ -885,6 +886,16 @@ function projWire(){
   $("#pr_copy").onclick=guard(async()=>{const src=$("#pr_src").value.trim();if(!src){toast("Pick a rider or projector file","bad");return}
     const r=await api("/api/proj/copy",{dst:projR.pkg,src,group:grp});
     toast(r.done.length?`Copied ${r.done.join(", ")} from ${r.src.split("/").pop()}`+(r.missing.length?` (not in this file: ${r.missing.join(", ")})`:"")+" - press Save to keep it":"Nothing copied: no matching projector names",r.done.length?"ok":"bad");await reload(projR.pkg)});
+  $("#pr_reload").onclick=guard(()=>reload(projR.pkg));
+  $("#pr_ue").onclick=guard(async()=>{const r=await api("/api/proj/ue",{pkg:projR.pkg});
+    ask(`<h3>Preview ${esc(projR.pkg.split("/").pop())} in Unreal</h3><div class="mono">${esc(r.folder)}</div>
+      <ol class="help" style="line-height:1.6"><li>Unreal needs the <b>Python Editor Script Plugin</b> and <b>Editor Scripting Utilities</b> plugins on.</li>
+      <li>Optional: put the rider's number image as <b>number.png</b> in that folder (else a checker texture is shown).</li>
+      <li>Select the bike's Skeletal Mesh in the Content Browser, then <b>File &gt; Execute Python Script &gt; mgp_ue_load.py</b>. It places the bike and one decal per projector (MGP_&lt;tag&gt;) on bone BONE_CHASSIS (or VEHICLE_BASE).</li>
+      <li>Move, rotate, scale the decals. Then run <b>mgp_ue_send.py</b>: the values come back here (press Reload), then Save and Pack.</li></ol>
+      <div class="help">Keep this tool running: the scripts talk to this run of it. After restarting the tool, press Preview in UE again.<br>
+      Position and rotation match the game. The decal size at scale 1 is a guess: change DECAL_SIZE at the top of mgp_ue_load.py once to match the game (it is kept when the scripts are written again).</div>`,
+      [{label:"Close"},{label:"Open folder",cls:"p",fn:async()=>{await api("/api/reveal",{path:r.folder});return false}}])});
 }
 let style=null;
 function styleHtml(){

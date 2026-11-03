@@ -13,11 +13,12 @@ import uprops as U
 import audioport as AP
 import bnkport as BP
 
-VERSION = "v113"
+VERSION = "v114"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
 import projfile as PJ
+import ue_preview as UP
 import mgp_retoc as MR
 import fontswap as FS
 import valcopy as VC
@@ -687,6 +688,14 @@ def make_api(S):
             _proj_write(P, rel, a)
         missing = sorted(want - set(done))
         return dict(done=done, missing=missing, src=src, projectors=_proj_rows(_proj_reparse(a)[1]))
+
+    def proj_ue(q, b):
+        """Write the Unreal preview scripts (ue_preview.py) for one projector file into <mod folder>/_mgp_ue_preview."""
+        P = S.need()
+        rel, _, projs = _proj_open(P, b["pkg"])
+        folder = os.path.join(P.real_root, "_mgp_ue_preview")
+        paths = UP.write_scripts(folder, "http://127.0.0.1:%d" % getattr(S, "port", 8765), S.token, C.normalize_target(b["pkg"]), _proj_rows(projs))
+        return dict(folder=folder, files=paths, count=len(projs))
 
     def fix_names(q, b):
         """Fix every GP24 .uasset in the mod folder for UAssetGUI: correct the name hashes, and point uses of a
@@ -2291,7 +2300,7 @@ def make_api(S):
         return dict(value=val)
 
     return {
-        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("GET", "/api/fontswap"): fontswap_list, ("POST", "/api/fontswap/check"): fontswap_check, ("POST", "/api/fontswap/apply"): fontswap_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("GET", "/api/proj/rider"): proj_rider, ("POST", "/api/proj/set"): proj_set, ("POST", "/api/proj/copy"): proj_copy, ("POST", "/api/copyvalues"): copy_values, ("POST", "/api/fixnames"): fix_names, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port, ("GET", "/api/bank/scan"): bank_scan, ("POST", "/api/bank/port"): bank_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
+        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("GET", "/api/fontswap"): fontswap_list, ("POST", "/api/fontswap/check"): fontswap_check, ("POST", "/api/fontswap/apply"): fontswap_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("GET", "/api/proj/rider"): proj_rider, ("POST", "/api/proj/set"): proj_set, ("POST", "/api/proj/copy"): proj_copy, ("POST", "/api/proj/ue"): proj_ue, ("POST", "/api/copyvalues"): copy_values, ("POST", "/api/fixnames"): fix_names, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port, ("GET", "/api/bank/scan"): bank_scan, ("POST", "/api/bank/port"): bank_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
         ("POST", "/api/settings"): settings, ("GET", "/api/changes"): changes, ("POST", "/api/save"): save,
         ("POST", "/api/discard"): discard, ("POST", "/api/quit"): quit_, ("POST", "/api/open"): open_, ("GET", "/api/pilots"): pilots,
         ("GET", "/api/bindings"): bindings, ("GET", "/api/teamsuits"): team_suits, ("GET", "/api/choices"): choices, ("POST", "/api/replace"): replace,
@@ -2395,6 +2404,7 @@ def serve(load_cfg, save_cfg, default_key, port=8765, open_browser=True):
         def do_POST(self):
             self.handle_any("POST")
 
+    S.port = port
     srv = ThreadingHTTPServer(("127.0.0.1", port), H)
     S.on_quit = lambda: threading.Thread(target=srv.shutdown, daemon=True).start()
     url = "http://127.0.0.1:%d/" % port
