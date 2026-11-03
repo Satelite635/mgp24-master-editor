@@ -170,7 +170,7 @@ def send():
 load() if MODE == "load" else send()
 '''
 
-DEFAULT_DECAL_SIZE = "(128.0, 256.0, 256.0)"
+DEFAULT_DECAL_SIZE = "(50.0, 50.0, 50.0)"   # half-size: 100 cm box at scale 1, so the usual projector scale 0.16-0.2 gives a 16-20 cm number (friend: 16-20)
 
 
 def _kept(path, name, default):

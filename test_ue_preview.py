@@ -54,7 +54,7 @@ dec=[x for x in actors if "MGP_PROJ" in x.tags][0]; dec.root_component.p["relati
 runpy.run_path(paths[1])
 assert len(got)==3 and got[0][0]=="tok123" and got[0][1]["loc"]==[1,2,3] and got[1][1]["rot"]==[-28.9,-178.0,-4.0], got
 # kept calibration
-txt=open(paths[0]).read().replace("DECAL_SIZE = (128.0, 256.0, 256.0)","DECAL_SIZE = (10.0, 40.0, 40.0)").replace('NUMBER_PNG = r""','NUMBER_PNG = r"C:\\nums\\46.png"')
+txt=open(paths[0]).read().replace("DECAL_SIZE = (50.0, 50.0, 50.0)","DECAL_SIZE = (10.0, 40.0, 40.0)").replace('NUMBER_PNG = r""','NUMBER_PNG = r"C:\\nums\\46.png"')
 open(paths[0],"w").write(txt)
 UP.write_scripts(out,"http://x","t","/Game/x/p",rows)
 kept=[l.split("   #")[0] for l in open(paths[0]) if l.startswith(("DECAL_SIZE","NUMBER_PNG"))]
