@@ -690,4 +690,6 @@ def _plan_bike(P, S, T, tm, src_init, name, r, writes, init_extra, seen_bnk, com
         r["actions"].append("gain %+g dB on %d top-level object(s) of %s.bnk" % (_GAIN, nch, bank_name))
     writes.append((name, brel, bnk))
     r["actions"].append("copy %s.bnk (%.1f MB)" % (bank_name, len(bnk) / 1048576))
-    r["new_path"] = bike_pkg
+    # full object path (pkg.obj), the form the binding tables use; a bare package path pasted into
+    # DT_AUDIO_BikeOfficial by hand leaves the bike silent (Faizal, GP22 port, v118)
+    r["new_path"] = bike_pkg + "." + bt["name"]
