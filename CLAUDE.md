@@ -2,7 +2,7 @@
 
 A local web tool (Python stdlib server + one `webui.html`) for modding **MotoGP 24** (Unreal Engine 4.27, Windows).
 Owner: **Faizal** (sells MotoGP livery mods; tests everything in the real game and reports back with screenshots/crash logs).
-Start it with `MGP24MasterEditor.exe` (v105+), `start.bat` (or `python motogp_master_editor.py web`) → http://127.0.0.1:8765. Only dependency: `pycryptodome`.
+Start it with `MGP24MasterEditor.exe` (v105+), `start.bat` (or `python motogp_master_editor.py web`) → http://127.0.0.1:8765. Only dependency: `pycryptodome` (optional: `blake3`, `zstandard` for compressed .usmap).
 
 ## How to work with Faizal
 - **Keep answers short. Be honest and unbiased, even when it's uncomfortable.** If a result is unverified, say so.
@@ -10,7 +10,7 @@ Start it with `MGP24MasterEditor.exe` (v105+), `start.bat` (or `python motogp_ma
 - Several of my past diagnoses were wrong (see `docs/HUD_PENALTIES.md`). State guesses as guesses; prefer adding diagnostics (what was skipped/why) over speculating.
 - After each change: bump the version, rebuild the zip, send it. Version lives in TWO places and must match:
   `VERSION = "vNN"` in `webui.py` and `HV="vNN"` in `webui.html` (page shows a red "close the tool and start it again" if they differ).
-  Current: **v105**.
+  Current: **v112**.
 - Deliverable convention: `./build_zip.sh` (builds `../motogp_master_editor.zip` incl. the Blender add-on zip), then send the zip.
 - Windows exe (since v105): built only on Windows, by GitHub Actions `.github/workflows/build-exe.yml` on every push (`build_exe.py`, PyInstaller). Artifact = exe + README + add-on zip. Can't be built/tested here; a Linux `python build_exe.py` makes a Linux binary for smoke tests only.
 
@@ -28,6 +28,8 @@ Start it with `MGP24MasterEditor.exe` (v105+), `start.bat` (or `python motogp_ma
 | `mgp_locres.py` | `.locres` read/write |
 | `mgp_retoc.py` | MotoGP 25: runs retoc (to-legacy for Extract/Edit…, to-zen when packing legacy files) |
 | `fontswap.py` | Font swap: read a .ttf/.otf/.ufont's names; the editor writes it as `<FontFace>.ufont` |
+| `valcopy.py` | "Copy values from…": match properties by path between two assets (any format) and patch the target in place |
+| `usmap.py` / `uvprops.py` | `.usmap` reader / unversioned property reader (MotoGP 25/26 zen and retoc-legacy files) |
 | `projfile.py` | Projector files (`ProjectorsDataSource`): parse/patch transforms; shared by the editor and the Blender add-on |
 | `blender_addon/mgp_projectors/` | Blender add-on for number projectors (see `docs/PROJECTORS.md`) |
 | `test_*.py` | Offline tests (most need CLI args — see `docs/TESTING.md`) |

@@ -17,6 +17,16 @@ Reads: mod folder first, then game paks (base paks, then *_P patch/mod paks on t
 Untick "include *_P paks" to start from the vanilla game instead of your own mod pak.
 Your output = the mod folder: repack it into a pak yourself.
 
+Copy values from another .uasset (Browse -> "Copy values from...")
+-----------------------------------------------------------------
+Keeps the chosen asset's own file (header, names, imports, texture/material paths) and overwrites only
+numbers, bools, vectors, colours and transforms that match by property name (projectors by tag, material
+parameters by name, DataTable rows by row name). Nothing is added or removed: the file size stays the same.
+Source: a .uasset on your PC (its .uexp next to it) or a /Game/... path, from GP24, GP25 or GP26.
+MotoGP 25/26 files have no property names inside: set the game's .usmap (Setup, or in the dialog);
+for a MotoGP 26 source also give MotoGP 26's .usmap. Press Preview first: it lists what would change,
+what was skipped and why (not stored in the target, different type, reference/text).
+
 Rider gear / all bindings
 -------------------------
 Select a pilot: the lower panel lists every binding table that has a row for that rider (helmet, suit, gloves,

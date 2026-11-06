@@ -6,6 +6,10 @@
 3. **Port audio Gain** (+6 dB suggested) — untested.
 4. **Fonts**: decision was "tool for HUD only, copy Fonts folder from his working pak". The retarget tool's output is unverified in game. If he wants it to work: find why the **leaderboard font** wasn't replaced (which Font asset do `HUDLeaderboardWidgetBP` texts use?). Consider a "fonts used by this page" report. Also determine whether the game's original `MotoGPText_*` fonts are really in the base paks (his list stopped showing them after he deleted loose copies; skip reason was "bad magic" — likely stale pak handle; v72 re-reads changed paks automatically).
 
+## Copy values (v106) - waiting on Faizal
+- Test in game: copy values into a GP24/GP25 asset and check the change shows. Real GP24 files were never available offline (only synthetic ones). GP26 sources need GP26's own .usmap.
+- Values stored as zero in a GP25 target (zero mask, no bytes) can't be set without re-serializing the export; reported as "skipped". Possible next step if it matters.
+
 ## Tool improvements worth doing
 - ~~Reopen/refresh `PakSet` after Pack mod~~ done in v72 (auto refresh); unconfirmed in game.
 - Make HUD import smarter: skip fonts and penalty/warning files by default; offer to run the graft right after import.
