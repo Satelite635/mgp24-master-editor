@@ -163,7 +163,8 @@ ok(c.rename_object_name(on, on + "_copy2", mx) and c.export_object_names()[0] ==
    and not c.duplicate_names() and V.Doc(c.to_bytes(), mx).cls == "ProjectorsDataSource_C", "export name renamed in place (%s)" % on)
 c = UAsset(ma)
 ok(c.rename_object_name(on, on + "_copy2", struct.pack("<i", c.texts().index(on))) and c.export_object_names()[0] == on + "_copy2"
-   and on in c.texts() and not c.duplicate_names() and V.Doc(c.to_bytes(), mx).cls == "ProjectorsDataSource_C", "kept when the .uexp may use it; export moved to a new name")
+   and on not in c.texts() and len(c.texts()) == len(UAsset(ma).texts()) and V.Doc(c.to_bytes(), mx).cls == "ProjectorsDataSource_C",
+   "renamed in place even when its index bytes happen to be in the .uexp (no name added, old name gone)")
 c = UAsset(ma)
 ok(c.fix_own_name("newbase", mx) == on and c.export_object_names()[0] == "newbase" and c.fix_own_name("newbase", mx) is None, "Fix name tables renames an old clone's object name once")
 r = V.copy(V.Doc(mb, mxb), V.Doc(ma, mx), refs=False, write=False)

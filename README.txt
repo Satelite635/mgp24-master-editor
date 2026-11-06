@@ -4,7 +4,7 @@ Easiest:        double-click MGP24MasterEditor.exe (no Python needed; Python + p
                 It opens a console window (keep it open while you use the tool) and the editor in your browser.
                 mgp_config.json is saved next to the exe. If Windows SmartScreen/antivirus warns about it, that's
                 a common false positive for PyInstaller exes ("More info" -> "Run anyway").
-From source:    pip install pycryptodome, then double-click start.bat
+From source:    pip install pycryptodome (and pillow + numpy for textures), then double-click start.bat
 Check the pak reader on your game (do this first):
     python motogp_master_editor.py selftest --paks "F:\SteamLibrary\steamapps\common\MotoGP24\motogp24\Content\Paks"
 Web UI:         python motogp_master_editor.py        (opens http://127.0.0.1:8765 in your browser)
@@ -153,3 +153,6 @@ Blender add-on: bike number projectors (mgp24_projectors_addon.zip, inside this 
   Use: 3D View > N panel > MGP24. Set Parent to your bike's root (e.g. VEHICLE_BASE), Load a ProjectorCustomNNN_VVV.uasset (its .uexp must be next to it).
   Each projector shows as a box (+ arrow). Move/rotate/scale it, select it, click Write back. "Write to another file" copies the placement to another bike's projector file.
   The first write keeps a .bak copy. Boxes with no texture are probably unused. Axis/scale conventions are a first guess: check once against a bike you know.
+
+texconv.exe (in the zip): Microsoft's DirectXTex texture converter, MIT licence,
+https://github.com/microsoft/DirectXTex - used by Browse -> Texture to encode DXT/BC5/BC7.
