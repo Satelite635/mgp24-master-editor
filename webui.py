@@ -13,13 +13,15 @@ import uprops as U
 import audioport as AP
 import bnkport as BP
 
-VERSION = "v113"
+VERSION = "v117"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
 import projfile as PJ
 import mgp_retoc as MR
 import fontswap as FS
+import mgp_texture as TX
+import io
 import valcopy as VC
 
 HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))   # _MEIPASS: inside the .exe
@@ -187,8 +189,9 @@ def _pick_result(S, kind, path):
 def _pick_powershell(kind, start):
     """Windows fallback when Python has no tkinter: the system folder/file dialogs through PowerShell."""
     q = lambda s: "'" + s.replace("'", "''") + "'"
-    if kind in ("file", "asset", "game", "font", "uasset", "usmap"):
+    if kind in ("file", "asset", "game", "font", "uasset", "usmap", "image"):
         flt = ("Unreal assets (*.uasset)|*.uasset" if kind in ("asset", "uasset") else
+               "Pictures (*.png;*.tga;*.dds;*.jpg;*.bmp)|*.png;*.tga;*.dds;*.jpg;*.jpeg;*.bmp|All files (*.*)|*.*" if kind == "image" else
                "Mappings (*.usmap)|*.usmap|All files (*.*)|*.*" if kind == "usmap" else
                "Game or shortcut (*.exe;*.lnk;*.url)|*.exe;*.lnk;*.url|All files (*.*)|*.*" if kind == "game" else
                "Fonts (*.ttf;*.otf;*.ufont)|*.ttf;*.otf;*.ufont|All files (*.*)|*.*" if kind == "font" else
@@ -1007,6 +1010,9 @@ def make_api(S):
                 elif kind == "usmap":
                     path = filedialog.askopenfilename(initialdir=start, title="Choose the game's .usmap",
                                                       filetypes=[("Mappings", "*.usmap"), ("All files", "*.*")], parent=root)
+                elif kind == "image":
+                    path = filedialog.askopenfilename(initialdir=start, title="Choose the picture",
+                                                      filetypes=[("Pictures", "*.png *.tga *.dds *.jpg *.jpeg *.bmp"), ("All files", "*.*")], parent=root)
                 elif kind == "file":
                     path = filedialog.askopenfilename(initialdir=start, title="Choose the file",
                                                       filetypes=[("Programs", "*.exe"), ("All files", "*.*")], parent=root)
@@ -1962,6 +1968,64 @@ def make_api(S):
         pkg = P.table(rel).target(key).partition(".")[0]
         return asset_members(P, pkg)
 
+    # ---- textures: replace the picture of a cooked Texture2D (GP24), staged
+    def _tex_load(P, pkg):
+        if P.game != "gp24":
+            raise C.MgpError("texture import works for MotoGP 24 only so far")
+        stem = C.game_to_rel(pkg)
+        if not P.src.exists(stem + ".uasset") or not P.src.exists(stem + ".uexp"):
+            raise C.MgpError("texture not found (needs its .uasset and .uexp): " + pkg)
+        ua, ux = P.src.read(stem + ".uasset"), P.src.read(stem + ".uexp")
+        ub = P.src.read(stem + ".ubulk") if P.src.exists(stem + ".ubulk") else None
+        return stem, ua, ux, ub
+
+    def tex_info(q, b):
+        import base64
+        P = S.need()
+        stem, ua, ux, ub = _tex_load(P, b["pkg"])
+        info = TX.parse(ua, ux, ub)
+        d = TX.describe(info)
+        d.update(pkg=b["pkg"], origin=P.src.origin(stem + ".uasset"), ubulk_found=ub is not None, encoder=TX.encoder_name(info["fmt"]))
+        try:
+            im = TX.preview(info)
+            im.thumbnail((320, 320))
+            buf = io.BytesIO(); im.save(buf, "PNG")
+            d["preview"] = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+        except Exception as e:
+            d["preview_error"] = str(e)
+        return d
+
+    def tex_export(q, b):
+        """Full-size PNG of the texture's top mip, into <mod folder>/_mgp_textures (not packed)."""
+        P = S.need()
+        stem, ua, ux, ub = _tex_load(P, b["pkg"])
+        im = TX.preview(TX.parse(ua, ux, ub))
+        out = os.path.join(P.real_root, "_mgp_textures", stem.rsplit("/", 1)[-1] + ".png")
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        im.save(out)
+        return dict(path=out, size=list(im.size))
+
+    def tex_replace(q, b):
+        """New picture into the texture, keeping its format/settings/mip split. Staged (Save writes it)."""
+        P = S.need()
+        path = (b.get("path") or "").strip().strip('"')
+        if not path or not os.path.isfile(path):
+            raise C.MgpError("picture not found: %r" % path)
+        stem, ua, ux, ub = _tex_load(P, b["pkg"])
+        log = []
+        nua, nux, nub = TX.replace(ua, ux, ub, image_path=path, log=log.append)
+        if ub is not None and nub is None:
+            raise C.MgpError("the picture is too small: this texture keeps its big mips in a .ubulk; use the original size")
+        out = [(".uasset", nua), (".uexp", nux)] + ([(".ubulk", nub)] if nub is not None else [])
+        for ext, blob in out:
+            full = P.src.loose(stem + ext)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            P.backup(full)
+            with open(full, "wb") as f:
+                f.write(blob)
+        info = TX.describe(TX.parse(nua, nux, nub))
+        return dict(done=stem.rsplit("/", 1)[-1], info=info, log=log, files=[stem + e for e, _ in out])
+
     def edit_asset(q, b):
         """Put the asset's files into the staging folder (so edits are saved/discarded like everything else)
         and open the .uasset in UAssetGUI (or whatever opens .uasset files)."""
@@ -2291,7 +2355,7 @@ def make_api(S):
         return dict(value=val)
 
     return {
-        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("GET", "/api/fontswap"): fontswap_list, ("POST", "/api/fontswap/check"): fontswap_check, ("POST", "/api/fontswap/apply"): fontswap_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("GET", "/api/proj/rider"): proj_rider, ("POST", "/api/proj/set"): proj_set, ("POST", "/api/proj/copy"): proj_copy, ("POST", "/api/copyvalues"): copy_values, ("POST", "/api/fixnames"): fix_names, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port, ("GET", "/api/bank/scan"): bank_scan, ("POST", "/api/bank/port"): bank_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
+        ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("GET", "/api/fontswap"): fontswap_list, ("POST", "/api/fontswap/check"): fontswap_check, ("POST", "/api/fontswap/apply"): fontswap_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("GET", "/api/proj/rider"): proj_rider, ("POST", "/api/proj/set"): proj_set, ("POST", "/api/proj/copy"): proj_copy, ("POST", "/api/copyvalues"): copy_values, ("POST", "/api/fixnames"): fix_names, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port, ("GET", "/api/bank/scan"): bank_scan, ("POST", "/api/bank/port"): bank_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset, ("POST", "/api/tex/info"): tex_info, ("POST", "/api/tex/export"): tex_export, ("POST", "/api/tex/replace"): tex_replace,
         ("POST", "/api/settings"): settings, ("GET", "/api/changes"): changes, ("POST", "/api/save"): save,
         ("POST", "/api/discard"): discard, ("POST", "/api/quit"): quit_, ("POST", "/api/open"): open_, ("GET", "/api/pilots"): pilots,
         ("GET", "/api/bindings"): bindings, ("GET", "/api/teamsuits"): team_suits, ("GET", "/api/choices"): choices, ("POST", "/api/replace"): replace,

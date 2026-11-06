@@ -24,5 +24,11 @@ if errorlevel 1 (
   python -m pip install zstandard
   if errorlevel 1 echo zstandard install failed - "Copy values from..." then needs an uncompressed .usmap for MotoGP 25.
 )
+python -c "import numpy; from PIL import DdsImagePlugin as D; assert hasattr(D, '_save')" >nul 2>nul
+if errorlevel 1 (
+  echo Installing Pillow and numpy ^(one time, for Browse -^> Texture^)...
+  python -m pip install --upgrade pillow numpy
+  if errorlevel 1 echo Pillow install failed - Browse -^> Texture will not work.
+)
 python motogp_master_editor.py web
 pause

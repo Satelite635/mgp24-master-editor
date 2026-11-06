@@ -8,3 +8,4 @@ _mgp_pak/
 build/
 dist/
 *.spec
+texconv.exe

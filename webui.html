@@ -452,7 +452,7 @@ const brLoad=guard(async(dir,refresh)=>{
   if(brDir.includes("/"))h+=`<tr><td colspan="3"><a href="#" data-d="${esc(brDir.slice(0,brDir.lastIndexOf("/")))}">..</a></td></tr>`;
   h+=r.dirs.map(d=>`<tr><td colspan="2">📁 <a href="#" data-d="${esc(brDir+"/"+d.name)}">${esc(d.name)}</a></td><td style="opacity:.6">${d.count} files</td></tr>`).join("");
   h+=r.items.map((it,i)=>`<tr><td style="word-break:break-all">${esc(it.name)}</td><td style="opacity:.6;white-space:nowrap">${esc(it.exts.filter(Boolean).join(" "))} ${esc(it.origin)}</td><td style="white-space:nowrap">`+
-    (it.asset?`<button class="b" data-a="edit" data-i="${i}">Edit</button> <button class="b" data-a="clone" data-i="${i}">Clone</button> <button class="b" data-a="refs" data-i="${i}" title="which assets point to this one (takes a while)">Used by</button> <button class="b" data-a="values" data-i="${i}" title="keep this file, overwrite its numbers/vectors/colours with the ones of another .uasset">Copy values from…</button> `+(/projector/i.test(it.name.split("/").pop())?`<button class="b" data-a="proj" data-i="${i}">Copy projectors from…</button> `:""):"")+
+    (it.asset?`<button class="b" data-a="edit" data-i="${i}">Edit</button> <button class="b" data-a="clone" data-i="${i}">Clone</button> <button class="b" data-a="refs" data-i="${i}" title="which assets point to this one (takes a while)">Used by</button> <button class="b" data-a="values" data-i="${i}" title="keep this file, overwrite its numbers/vectors/colours with the ones of another .uasset">Copy values from…</button> <button class="b" data-a="tex" data-i="${i}" title="see a texture and replace its picture with a PNG/TGA/DDS">Texture</button> `+(/projector/i.test(it.name.split("/").pop())?`<button class="b" data-a="proj" data-i="${i}">Copy projectors from…</button> `:""):"")+
     (it.base.toLowerCase().endsWith(".locres")?`<button class="b" data-a="loc" data-i="${i}">Open in Localization</button> `:"")+
     `<button class="b" data-a="extract" data-i="${i}">Extract</button></td></tr>`).join("");
   $("#br_out").innerHTML=h+"</table>";
@@ -521,6 +521,17 @@ function valDlg(dst,rel,key=cur){                    // rel: binding table whose
     const b=await api(`/api/browse?assets=1&dir=${encodeURIComponent(dir)}&limit=300`).catch(()=>null);if(b)near=b.items.filter(i=>i.asset).map(i=>i.pkg);
     if($("#cv_pick"))draw()})();
 }
+async function texDlg(pkg){
+  const d=await api("/api/tex/info",{pkg});
+  ask(`<h3>Texture ${esc(pkg.split("/").pop())}</h3><div class="sub">${esc(d.format)} · ${d.width}×${d.height} · ${d.mips} mip(s)${d.mips_in_ubulk?` (${d.mips_in_ubulk} in .ubulk)`:""} · ${esc(String(d.compression))}${d.srgb===false?" · not sRGB":""} · ${esc(d.origin)}</div>
+    <div style="margin:10px 0;text-align:center">${d.preview?`<img src="${d.preview}" style="max-width:320px;max-height:320px;background:repeating-conic-gradient(#444 0 25%,#666 0 50%) 0 0/16px 16px">`:esc(d.preview_error||"")}</div>
+    <div class="pathrow"><input type="text" id="tx_path" placeholder="new picture: .png, .tga or .dds" autocomplete="off"><button class="b" id="tx_pick">Pick…</button></div>
+    <div class="help">The picture is converted to this texture's format (${esc(d.format)}) with a new mip chain; format, sRGB and other settings stay as they are. A .dds in the same format, size and mips is used as is. Other sizes work if they are a power of two. <b>Export PNG</b> writes the current picture to your mod folder's _mgp_textures folder (not packed).</div><div class="help">Encoder: ${esc(d.encoder||"")}</div>`,
+   [{label:"Cancel"},{label:"Export PNG",fn:async()=>{const r=await api("/api/tex/export",{pkg});toast("Wrote "+r.path,"ok");api("/api/reveal",{path:r.path}).catch(()=>{});return false}},
+    {label:"Replace",cls:"p",fn:async()=>{const path=$("#tx_path").value.trim();if(!path){toast("Pick a picture first","bad");return false}
+      const r=await api("/api/tex/replace",{pkg,path});toast(`Replaced ${r.done}: ${r.info.format} ${r.info.width}×${r.info.height}, ${r.info.mips} mip(s) - press Save to keep it`,"ok");refreshChanges()}}]);
+  $("#tx_pick").onclick=guard(async()=>{const r=await api("/api/pick",{kind:"image",initial:$("#tx_path").value});if(r.path)$("#tx_path").value=r.path});
+}
 async function brAct(a,it){
   if(a==="extract"){
     const go=async(mode)=>{const r=await api("/api/browse/extract",{bases:[it.base],overwrite:mode});
@@ -531,6 +542,7 @@ async function brAct(a,it){
     await go(undefined);return}
   if(a==="edit"){const r=await api("/api/edit",{pkg:it.pkg});toast(r.launched?"Opened in UAssetGUI":("Staged "+r.path+(r.error?" ("+r.error+")":"")),r.launched?"ok":"bad");return}
   if(a==="proj"){projDlg(it.pkg);return}
+  if(a==="tex"){texDlg(it.pkg);return}
   if(a==="values"){valDlg(it.pkg);return}
   if(a==="refs"){await api("/api/refs",{pkg:it.pkg});
     packTrack("Finding uses",r=>{if(r.error||!r.result)return;const h=r.result.hits;
@@ -636,7 +648,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v113";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v117";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_retoc").value=ST.retoc||"";$("#s_usmap").value=ST.usmap||"";retocInfo();$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const g=ST.game_id||"gp24",keep=["riders","check","browse","loc","db","setup"];$("#s_gameid").value=g;$$("nav button").forEach(b=>b.style.display=(g==="gp24"||keep.includes(b.dataset.t))?"":"none");if(g!=="gp24"&&!keep.includes(($$("nav button.on")[0]||{}).dataset?.t))tab(ST.open?"riders":"setup")}
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}

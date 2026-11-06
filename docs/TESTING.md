@@ -20,5 +20,7 @@ GP24 originals of `RaceHud_BP`/`HUDRacePage` (supplied by user), SBK versions im
 
 - `python test_bnkport.py <GP24 bank> <GP26 bank> [expected]` - GP26 bank import (samples: project files `gp26-audio-test/`).
 - `python test_valcopy.py [<MotoGP_25.usmap> <GP25 zen projector .uasset> <GP25 retoc-legacy projector .uasset>]` - Copy values (no args: synthetic GP24 files only; samples: project files `gp25-samples/MotoGP_25.usmap`, `gp26-to-gp25-projectors/projector108_002.uasset`, the legacy pair inside `TEST_projectors_scale_x3.zip`). Needs `zstandard` for the zstd .usmap.
+- `python test_texture.py <folder with Content/... cooked GP24 Texture2D assets> <work dir>` - Browse → Texture (samples: extract `hud2009-gp14/zzz_hud2009_gp14_P.pak` from project files with `mgp_pak.PakReader(path, None)`). Needs Pillow 11+ and numpy. Real GP24 samples (livery001_*, suit_101_*): project files `texture-samples/` (from Faizal, 2026-11-06), put them under any Content/ subfolder.
+- `python test_texconv.py` - Windows only (texconv.exe next to it), run by CI.
 - `python test_teamsuits.py` - Teams view team suits (`/api/teamsuits`), synthetic tables + in-memory DB, no args.
 - `python test_zen.py <folder with GP25 DT_Bike*.uasset> [retoc-made .utoc]` - MotoGP 25 zen tables + IoStore writer (samples: project files `gp25-samples/`).

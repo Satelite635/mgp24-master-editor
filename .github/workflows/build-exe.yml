@@ -11,7 +11,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pyinstaller pycryptodome blake3 zstandard
+      - run: pip install pyinstaller pycryptodome blake3 zstandard pillow numpy
       - run: python build_exe.py
       - name: Smoke test (serves the page)
         shell: pwsh
@@ -35,6 +35,12 @@ jobs:
           Compress-Archive rel\mgp_projectors rel\mgp24_projectors_addon.zip
           Remove-Item -Recurse rel\mgp_projectors
           Copy-Item dist\MGP24MasterEditor.exe,README.txt rel\
+          # Microsoft texconv (MIT licence) for good DXT/BC5/BC7 texture encoding (Browse -> Texture)
+          Invoke-WebRequest https://github.com/microsoft/DirectXTex/releases/latest/download/texconv.exe -OutFile rel\texconv.exe
+          Copy-Item rel\texconv.exe .
+          python test_texconv.py
+          if ($LASTEXITCODE -ne 0) { throw "texconv check failed" }
+          Remove-Item texconv.exe
           echo "VER=$v" >> $env:GITHUB_ENV
       - uses: actions/upload-artifact@v4
         with:

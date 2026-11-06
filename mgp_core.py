@@ -254,13 +254,16 @@ class UAsset:
         return merged, skipped
 
     def rename_object_name(self, old, new, uexp=b""):
-        """Give header uses of name `old` (export/import object names) the text `new`. Rewritten in place when
-        the .uexp cannot be using it; otherwise `new` is added (or reused) and only the header uses move."""
+        """Give the name `old` (the asset's own object name etc.) the text `new`, in place, so the file has no
+        leftover copy of the old name. Only when `new` is already in the table do the header uses move to it.
+        (Before v117 a name was kept and `new` appended whenever its 4 index bytes appeared anywhere in the
+        .uexp - a false hit in about half of real files - so clones kept the old name; Faizal: bugs out in game.)
+        `uexp` is unused, kept for callers."""
         texts = self.texts()
         if old not in texts or old == new:
             return False
         i = texts.index(old)
-        if new not in texts and struct.pack("<i", i) not in uexp:
+        if new not in texts:
             self.replace_name(i, new)
             return True
         j = texts.index(new) if new in texts else self.append_name(new)
