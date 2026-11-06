@@ -13,7 +13,7 @@ import uprops as U
 import audioport as AP
 import bnkport as BP
 
-VERSION = "v112"
+VERSION = "v113"
 import mgp_pakwrite as PW
 import mgp_locres as LR
 import hudskin as HS
@@ -2086,20 +2086,50 @@ def make_api(S):
                 pass
         return [dict(key=k, n=counts[k]) for k in sorted(counts)]
 
-    def bindings(q, b):
-        P = S.need()
-        key = q["key"][0]
+    def _binding_rows(P, key, group):
         out = []
-        for rel, cat, target in P.pilot_bindings(key, (q.get("group") or [None])[0]):
+        for rel, cat, target in P.pilot_bindings(key, group):
             if not is_game(target):          # the row points at nothing; it can still be replaced
-                out.append(dict(rel=rel, table=tname(rel), cat=cat, target=target, exists=True, suggest=[], origin="(empty)"))
+                out.append(dict(rel=rel, key=key, table=tname(rel), cat=cat, target=target, exists=True, suggest=[], origin="(empty)"))
                 continue
             pkg = target.partition(".")[0]
             ex = P.src.exists(C.game_to_rel(pkg) + ".uasset")
-            out.append(dict(rel=rel, table=tname(rel), cat=cat, target=target,
+            out.append(dict(rel=rel, key=key, table=tname(rel), cat=cat, target=target,
                             exists=ex, suggest=[] if ex else similar(P, pkg),
                             origin=P.src.origin(C.game_to_rel(pkg) + ".uasset") if hasattr(P.src, "origin") else ""))
         return out
+
+    def bindings(q, b):
+        P = S.need()
+        return _binding_rows(P, q["key"][0], (q.get("group") or [None])[0])
+
+    def team_suits(q, b):
+        """The suits a custom (career) rider can wear on team `key`: rows keyed SU_<class>_<maker>_<model>_<team>
+        (the game DB's TeamSuits.Key, Team_Key = the team), in any binding table. Also the DB's list and the
+        suit tables that could not be read, so an empty result says why."""
+        P = S.need()
+        key = q["key"][0]
+        db_keys, db_note = {}, ""
+        try:
+            db_keys = dict(S.get_db().con.execute("select Key, SuitModels_Key from TeamSuits where Team_Key=?", (key,)))
+        except Exception as e:
+            db_note = "game database: %s" % e
+        cls, _, team = key.partition("_")
+        pre, suf = "SU_%s_" % cls, "_" + team
+        found, bad = set(), []
+        for rel in P.table_names():
+            try:
+                t = P.table(rel)
+            except Exception as e:
+                if C.category(rel) == "suit":
+                    bad.append("%s: %s" % (tname(rel), e))
+                continue
+            found.update(k for k in t.rows if k in db_keys or (team and k.startswith(pre) and k.endswith(suf)))
+        suits = []
+        for k in sorted(found, key=lambda k: (k not in db_keys, k)):
+            model = db_keys.get(k) or k[len(pre):-len(suf)]
+            suits.append(dict(key=k, model=model, rows=_binding_rows(P, k, None)))
+        return dict(suits=suits, db=sorted(db_keys), missing=sorted(set(db_keys) - found), db_note=db_note, unreadable=bad)
 
     def choices(q, b):
         P = S.need()
@@ -2264,7 +2294,7 @@ def make_api(S):
         ("GET", "/api/state"): state, ("GET", "/api/audio/scan"): audio_scan, ("POST", "/api/pak"): pak_mod, ("POST", "/api/launch"): launch, ("GET", "/api/pak/status"): pak_status, ("GET", "/api/sheet"): sheet, ("POST", "/api/sheet/set"): sheet_set, ("POST", "/api/sheet/import"): sheet_import, ("GET", "/api/hud/targets"): hud_targets, ("POST", "/api/hud/scan"): hud_scan, ("POST", "/api/hud/import"): hud_import, ("POST", "/api/hud/modscan"): hud_modscan, ("POST", "/api/hud/compare"): hud_compare, ("POST", "/api/hud/apply"): hud_apply, ("POST", "/api/hud/vis"): hud_vis, ("POST", "/api/hud/vis/set"): hud_vis_set, ("POST", "/api/hud/graft"): hud_graft, ("POST", "/api/hud/swappos"): hud_swappos, ("POST", "/api/fonts/list"): fonts_list, ("POST", "/api/fonts/apply"): fonts_apply, ("GET", "/api/fontswap"): fontswap_list, ("POST", "/api/fontswap/check"): fontswap_check, ("POST", "/api/fontswap/apply"): fontswap_apply, ("POST", "/api/pick"): pick, ("POST", "/api/reveal"): reveal, ("GET", "/api/browse"): browse_list, ("POST", "/api/browse/extract"): browse_extract, ("POST", "/api/browse/clone"): browse_clone, ("POST", "/api/refs"): refs, ("GET", "/api/proj"): proj_list, ("GET", "/api/proj/rider"): proj_rider, ("POST", "/api/proj/set"): proj_set, ("POST", "/api/proj/copy"): proj_copy, ("POST", "/api/copyvalues"): copy_values, ("POST", "/api/fixnames"): fix_names, ("GET", "/api/loc/files"): loc_files, ("GET", "/api/loc/entries"): loc_entries, ("POST", "/api/loc/set"): loc_set, ("POST", "/api/audio/port"): audio_port, ("GET", "/api/bank/scan"): bank_scan, ("POST", "/api/bank/port"): bank_port,  ("POST", "/api/clonerow"): clone_row, ("GET", "/api/cloneaudit"): clone_audit, ("GET", "/api/teamsync"): teamsync, ("POST", "/api/teamsync"): teamsync_apply, ("GET", "/api/scan"): scan, ("GET", "/api/members"): members, ("POST", "/api/edit"): edit_asset,
         ("POST", "/api/settings"): settings, ("GET", "/api/changes"): changes, ("POST", "/api/save"): save,
         ("POST", "/api/discard"): discard, ("POST", "/api/quit"): quit_, ("POST", "/api/open"): open_, ("GET", "/api/pilots"): pilots,
-        ("GET", "/api/bindings"): bindings, ("GET", "/api/choices"): choices, ("POST", "/api/replace"): replace,
+        ("GET", "/api/bindings"): bindings, ("GET", "/api/teamsuits"): team_suits, ("GET", "/api/choices"): choices, ("POST", "/api/replace"): replace,
         ("POST", "/api/copylook"): copy_look, ("GET", "/api/style"): style_get, ("POST", "/api/style"): style_set, ("POST", "/api/clone"): clone, ("GET", "/api/describe"): describe_,
         ("GET", "/api/db/tables"): db_tables, ("GET", "/api/db/rows"): db_rows, ("POST", "/api/db/update"): db_update,
     }

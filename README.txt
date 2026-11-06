@@ -33,6 +33,9 @@ Select a pilot: the lower panel lists every binding table that has a row for tha
 boots, buttpatch, face/hair, bike extras). "Repoint selected" takes the target from another rider's row
 (same table); "Copy look from rider" does that for several categories at once. Cloning NEW gear sets
 (new helmet/suit assets) is not implemented yet - bikes only.
+Teams view: a team's page also lists "team suits - custom riders": the suits a custom/career rider wears on
+that team (rows keyed SU_<class>_<maker>_<model>_<team>, from the game database TeamSuits). Replace/Edit/
+Clone/Copy values work on them like on an official rider's suit.
 CLI: bindings <folder> <PilotKey> | copy-look <folder> <PilotKey> <DonorKey> [--only helmet,gloves]
 dt_inspect.py <bindings folder> <db.sqlite3>   dumps every DataTable's layout and which DB column its keys match.
 

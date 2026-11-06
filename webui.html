@@ -475,7 +475,7 @@ async function projDlg(dst){
   $("#pj_src").onchange=guard(async()=>{const src=$("#pj_src").value.trim();if(!d.files.includes(src))return;
     const s=await api("/api/proj?pkg="+encodeURIComponent(src));$("#pj_out").innerHTML=`<div style="margin:6px 0">${esc(src.split("/").pop())} (${esc(s.origin)}):</div>`+tbl(s.projectors,true)});
 }
-function valDlg(dst,rel){                    // rel: binding table whose row points at dst (offers other riders' assets)
+function valDlg(dst,rel,key=cur){                    // rel: binding table whose row points at dst (offers other riders' assets)
   const gp24=(ST.game_id||"gp24")==="gp24",name=dst.split("/").pop(),dir="Content/"+dst.slice(6).split("/").slice(0,-1).join("/");
   const show=r=>{const c=r.counts,keys=["changed","different","skipped","kept","not in target","not in source","same"];
     const all=$("#cv_all").checked,rows=r.rows.filter(x=>all||x.status!=="same");
@@ -517,7 +517,7 @@ function valDlg(dst,rel){                    // rel: binding table whose row poi
   $("#cv_all").onchange=()=>{if(last)show(last)};
   $("#cv_src").oninput=draw;draw();$("#cv_src").focus();
   (async()=>{
-    if(rel){const ch=await api(`/api/choices?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(cur)}`).catch(()=>null);if(ch)riders=ch.riders}
+    if(rel){const ch=await api(`/api/choices?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(key)}`).catch(()=>null);if(ch)riders=ch.riders}
     const b=await api(`/api/browse?assets=1&dir=${encodeURIComponent(dir)}&limit=300`).catch(()=>null);if(b)near=b.items.filter(i=>i.asset).map(i=>i.pkg);
     if($("#cv_pick"))draw()})();
 }
@@ -636,7 +636,7 @@ $("#a_go").onclick=runAudit;
 // ---- setup
 let ST={};
 async function loadState(){
-  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v112";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
+  ST=await api("/api/state");{const v=$("#ver");if(v){const HV="v113";if(ST.version===HV)v.textContent=HV;else{v.textContent="page "+HV+" / server "+(ST.version||"old")+" - close the tool and start it again";v.style.color="#ff6b6b";v.style.opacity=1}}}
   $("#s_gui").value=ST.uassetgui||"";$("#s_retoc").value=ST.retoc||"";$("#s_usmap").value=ST.usmap||"";retocInfo();$("#s_game").value=ST.game||"";$("#b_launch").disabled=!ST.game;$("#b_launch").title=ST.game?"Start the game":"Set the game path in Setup";$("#s_mod").value=ST.mod_folder||"";$("#s_paks").value=ST.paks_dir||"";$("#s_patch").checked=ST.include_patch!==false;
   {const g=ST.game_id||"gp24",keep=["riders","check","browse","loc","db","setup"];$("#s_gameid").value=g;$$("nav button").forEach(b=>b.style.display=(g==="gp24"||keep.includes(b.dataset.t))?"":"none");if(g!=="gp24"&&!keep.includes(($$("nav button.on")[0]||{}).dataset?.t))tab(ST.open?"riders":"setup")}
   {const w=ST.open?(ST.root+(ST.paks?"  +  paks":"  (loose files only)")):"no project open";$("#where").textContent="\u200E"+w+"\u200E";$("#where").title=w}
@@ -671,7 +671,8 @@ $("#s_go").onclick=guard(async()=>{
 });
 
 // ---- riders
-let pilots=[],pilotN={},officialKeys=[],grp="official",cur=null,bindings=[],info={};
+let pilots=[],pilotN={},officialKeys=[],grp="official",cur=null,bindings=[],info={},tsuits=null,openSuits=new Set();
+const rowOf=(rel,key)=>[...bindings,...(tsuits?.suits||[]).flatMap(s=>s.rows)].find(b=>b.rel===rel&&b.key===key);
 async function loadPilots(){const r=await api("/api/pilots?group="+grp);pilots=r.map(x=>x.key);pilotN=Object.fromEntries(r.map(x=>[x.key,x.n]));if(grp==="official")officialKeys=pilots;drawPilots()}
 async function setGroup(g){if(g===grp)return;grp=g;cur=null;$("#rsearch").value="";$$("#grp button").forEach(b=>b.classList.toggle("on",b.dataset.g===g));
   $("#rpane").innerHTML='<div class="empty">Pick an entry on the left.</div>';await loadPilots()}
@@ -686,6 +687,7 @@ const selectPilot=guard(async k=>{
   cur=k;drawPilots();
   [bindings,info,style]=await Promise.all([api("/api/bindings?group="+grp+"&key="+encodeURIComponent(k)),api("/api/describe?group="+grp+"&key="+encodeURIComponent(k)),api("/api/style?key="+encodeURIComponent(k)).catch(e=>({error:e.message}))]);
   projR=await api("/api/proj/rider?group="+grp+"&key="+encodeURIComponent(k)).catch(e=>({error:e.message}));
+  tsuits=grp==="teams"&&!k.startsWith("SU_")?await api("/api/teamsuits?key="+encodeURIComponent(k)).catch(e=>({error:e.message})):null;
   drawPilot();
 });
 function drawPilot(){
@@ -695,24 +697,38 @@ function drawPilot(){
    <div class="bar"><button class="b" id="b_look">Copy look from rider…</button><button class="b" id="b_clone" ${info.target?"":"disabled"}>Clone bike set…</button>
    ${info.assets?`<span class="tag">bike variant ${esc(info.tag)} · ${info.assets} assets</span>`:""}
    ${(info.missing||[]).length?`<span class="tag bad">${info.missing.length} referenced asset(s) missing</span>`:""}</div>`;
-  for(const c of order.filter(c=>cats[c])){
-    h+=`<div class="cat">${c}</div><table><tr><th style="width:210px">Table</th><th>Current asset</th><th style="width:130px">Status</th><th style="width:260px"></th></tr>`;
-    for(const b of cats[c]){
+  const rowsTable=list=>{let h=`<table><tr><th style="width:210px">Table</th><th>Current asset</th><th style="width:130px">Status</th><th style="width:260px"></th></tr>`;
+    for(const b of list){
+      const dk=`data-key="${esc(b.key)}"`;
       h+=`<tr><td class="mono">${esc(b.table)}</td><td class="mono">${esc(b.target)}</td>
-      <td>${b.exists?`<span class="tag ${b.origin==="unsaved"?"warn":"ok"}">${esc(b.origin)}</span>`:`<span class="tag bad">not found</span>`+(b.suggest&&b.suggest.length?`<div class="help">did you mean:</div>`+b.suggest.map(p=>`<div><a href="#" class="sug" data-rel="${esc(b.rel)}" data-p="${esc(p)}" style="color:var(--acc)">${esc(p.split("/").pop())}</a></div>`).join(""):"")}</td>
-      <td style="white-space:nowrap"><button class="b" data-rel="${esc(b.rel)}">Replace…</button> <button class="b" data-edit="${esc(b.rel)}">Edit…</button> <button class="b" data-clone="${esc(b.rel)}">Clone…</button>${b.exists?` <button class="b" data-vals="${esc(b.rel)}" title="keep this asset's file, overwrite its numbers/vectors/colours with the ones of another .uasset">Copy values…</button>`:""}</td></tr>`;
+      <td>${b.exists?`<span class="tag ${b.origin==="unsaved"?"warn":"ok"}">${esc(b.origin)}</span>`:`<span class="tag bad">not found</span>`+(b.suggest&&b.suggest.length?`<div class="help">did you mean:</div>`+b.suggest.map(p=>`<div><a href="#" class="sug" data-rel="${esc(b.rel)}" ${dk} data-p="${esc(p)}" style="color:var(--acc)">${esc(p.split("/").pop())}</a></div>`).join(""):"")}</td>
+      <td style="white-space:nowrap"><button class="b" data-rel="${esc(b.rel)}" ${dk}>Replace…</button> <button class="b" data-edit="${esc(b.rel)}" ${dk}>Edit…</button> <button class="b" data-clone="${esc(b.rel)}" ${dk}>Clone…</button>${b.exists?` <button class="b" data-vals="${esc(b.rel)}" ${dk} title="keep this asset's file, overwrite its numbers/vectors/colours with the ones of another .uasset">Copy values…</button>`:""}</td></tr>`;
     }
-    h+="</table>";
-  }
+    return h+"</table>"};
+  for(const c of order.filter(c=>cats[c]))h+=`<div class="cat">${c}</div>`+rowsTable(cats[c]);
+  if(tsuits)h+=suitsHtml(rowsTable);
   h+=projHtml()+styleHtml();
   $("#rpane").innerHTML=h;
   projWire();styleWire();
-  $$("#rpane button[data-rel]").forEach(b=>b.onclick=()=>replaceDlg(b.dataset.rel));
-  $$("#rpane a.sug").forEach(a=>a.onclick=guard(async e=>{e.preventDefault();finish(await api("/api/replace",{rel:a.dataset.rel,key:cur,target:a.dataset.p}))}));
-  $$("#rpane button[data-clone]").forEach(b=>b.onclick=()=>cloneRowDlg(b.dataset.clone));
-  $$("#rpane button[data-edit]").forEach(b=>b.onclick=()=>editDlg(b.dataset.edit));
-  $$("#rpane button[data-vals]").forEach(b=>b.onclick=()=>valsPick(b.dataset.vals));
+  $$("#rpane button[data-rel]").forEach(b=>b.onclick=()=>replaceDlg(b.dataset.rel,b.dataset.key));
+  $$("#rpane a.sug").forEach(a=>a.onclick=guard(async e=>{e.preventDefault();finish(await api("/api/replace",{rel:a.dataset.rel,key:a.dataset.key,target:a.dataset.p}))}));
+  $$("#rpane button[data-clone]").forEach(b=>b.onclick=()=>cloneRowDlg(b.dataset.clone,b.dataset.key));
+  $$("#rpane button[data-edit]").forEach(b=>b.onclick=()=>editDlg(b.dataset.edit,b.dataset.key));
+  $$("#rpane button[data-vals]").forEach(b=>b.onclick=()=>valsPick(b.dataset.vals,b.dataset.key));
+  $$("#rpane details[data-sk]").forEach(d=>d.ontoggle=()=>openSuits[d.open?"add":"delete"](d.dataset.sk));
   $("#b_look").onclick=lookDlg;$("#b_clone").onclick=cloneDlg;
+}
+
+function suitsHtml(rowsTable){             // Teams: the suits custom (career) riders wear on this team
+  const t=tsuits;let h=`<div class="cat">team suits · custom riders</div>`;
+  if(t.error)return h+`<div class="help" style="color:var(--bad)">${esc(t.error)}</div>`;
+  h+=`<div class="help">Rows keyed SU_&lt;class&gt;_&lt;suit maker&gt;_&lt;model&gt;_&lt;team&gt; (game database TeamSuits). Edit them like an official rider's suit.</div>`;
+  for(const s of t.suits)h+=`<details style="margin-top:8px" ${openSuits.has(s.key)?"open":""} data-sk="${esc(s.key)}"><summary style="cursor:pointer"><b>${esc(s.model)}</b> <span class="mono">${esc(s.key)}</span> <span class="tag">${s.rows.length} row(s)</span></summary>`+(s.rows.length?rowsTable(s.rows):`<div class="help">no binding rows</div>`)+`</details>`;
+  if(!t.suits.length)h+=`<div class="help">No SU_… rows for this team in any binding table.</div>`;
+  if(t.missing.length)h+=`<div class="help">In the database but in no binding table: ${t.missing.map(esc).join(", ")}</div>`;
+  if(t.db_note)h+=`<div class="help">${esc(t.db_note)}</div>`;
+  if(t.unreadable.length)h+=`<div class="help" style="color:var(--bad)">Suit tables the tool can't read: ${t.unreadable.map(esc).join("; ")}</div>`;
+  return h;
 }
 
 // ---- dialogs
@@ -724,14 +740,14 @@ function ask(html,buttons){ // buttons: [{label,cls,fn}] ; fn returns false to k
     e.onclick=async()=>{let r;try{r=b.fn?await b.fn():undefined}catch(x){toast(x.message,"bad");return}if(r!==false)dlg.close()};row.append(e)});
   dlg.showModal();
 }
-function replaceDlg(rel){
-  const row=bindings.find(b=>b.rel===rel);
-  api(`/api/choices?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(cur)}`).then(ch=>{
-    ask(`<h3>Replace ${esc(row.table)} for ${esc(cur)}</h3><div class="sub">now: ${esc(ch.current)}</div>
+function replaceDlg(rel,key=cur){
+  const row=rowOf(rel,key);
+  api(`/api/choices?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(key)}`).then(ch=>{
+    ask(`<h3>Replace ${esc(row.table)} for ${esc(key)}</h3><div class="sub">now: ${esc(ch.current)}</div>
       <input type="text" id="r_in" placeholder="type to filter, or paste another rider / /Game/… path" autocomplete="off">
       <div class="pick" id="r_pick"></div>
       <div class="help">Pick an existing asset or rider, or type a /Game/… path. If it does not exist you can create it as a copy.</div>`,
-     [{label:"Cancel"},{label:"Replace",cls:"p",fn:()=>doReplace(rel,$("#r_in").value.trim())}]);
+     [{label:"Cancel"},{label:"Replace",cls:"p",fn:()=>doReplace(rel,$("#r_in").value.trim(),undefined,key)}]);
     const draw=()=>{const q=$("#r_in").value.toLowerCase();
       const pk=ch.packages.filter(p=>p.toLowerCase().includes(q)).slice(0,150),rd=ch.riders.filter(p=>p.toLowerCase().includes(q)).slice(0,60);
       $("#r_pick").innerHTML=(rd.length?`<small>other riders (copy their asset)</small>`+rd.map(r=>`<div>${esc(r)}</div>`).join(""):"")+
@@ -766,9 +782,9 @@ function replaceDlg(rel){
     $("#r_in").oninput=()=>browsing?browse():draw();draw();$("#r_in").focus();
   }).catch(e=>toast(e.message,"bad"));
 }
-async function doReplace(rel,target,copy){
+async function doReplace(rel,target,copy,key=cur){
   if(!target){toast("Enter or pick a target","bad");return false}
-  const r=await api("/api/replace",{rel,key:cur,target,copy});
+  const r=await api("/api/replace",{rel,key,target,copy});
   if(r.needs_choice){
     dlg.close();
     ask(`<h3>That asset does not exist</h3><div class="mono">${esc(r.pkg)}</div>
@@ -776,9 +792,9 @@ async function doReplace(rel,target,copy){
       <p class="help"><b>This asset only</b>: one data asset under the new name (any length); keeps using the original's materials/textures.<br>
       <b>Full set</b>: also copies its variant materials/textures. Needs a same-length variant number in the same folder (e.g. helmet_109 → helmet_900).</p>`,
       [{label:"Cancel"},
-       {label:"Point anyway",fn:async()=>finish(await api("/api/replace",{rel,key:cur,target,copy:"none"}))},
-       {label:"Copy this asset only",cls:"p",fn:()=>doReplace(rel,target,"asset").then(()=>true)},
-       {label:"Copy full set",cls:"p",fn:()=>doReplace(rel,target,"set").then(()=>true)}]);
+       {label:"Point anyway",fn:async()=>finish(await api("/api/replace",{rel,key,target,copy:"none"}))},
+       {label:"Copy this asset only",cls:"p",fn:()=>doReplace(rel,target,"asset",key).then(()=>true)},
+       {label:"Copy full set",cls:"p",fn:()=>doReplace(rel,target,"set",key).then(()=>true)}]);
     return false;
   }
   finish(r);
@@ -793,23 +809,23 @@ const openAsset=guard(async pkg=>{
      :"Extracted, but could not open it automatically"+(r.error?" ("+r.error+")":"")+".\nOpen this file yourself, edit and save it, then press Save here:\n"+r.path,r.launched?"ok":"bad");
   await refreshChanges();
 });
-function valsPick(rel){                       // Copy values from… for one asset of a binding row (the row's set can have several)
-  const row=bindings.find(b=>b.rel===rel);
-  api(`/api/members?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(cur)}`).then(ms=>{
+function valsPick(rel,key=cur){                       // Copy values from… for one asset of a binding row (the row's set can have several)
+  const row=rowOf(rel,key);
+  api(`/api/members?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(key)}`).then(ms=>{
     ms=ms.filter(m=>m.exists);
-    if(ms.length===1){valDlg(ms[0].pkg,ms[0].main?rel:"");return}
-    ask(`<h3>Copy values · ${esc(row.table)} · ${esc(cur)}</h3>
+    if(ms.length===1){valDlg(ms[0].pkg,ms[0].main?rel:"",key);return}
+    ask(`<h3>Copy values · ${esc(row.table)} · ${esc(key)}</h3>
       <div class="help" style="margin:0 0 8px">Click the asset to copy values into.</div>
       <div class="pick" id="v_pick" style="max-height:380px"></div>`,[{label:"Close"}]);
     $("#v_pick").innerHTML=ms.map(m=>`<div data-p="${esc(m.pkg)}"><b>${m.main?"★ ":"&nbsp;&nbsp;&nbsp;"}${esc(m.pkg.split("/").pop())}</b>
       <span class="tag">${esc(m.kind)}</span> <span class="tag ${m.origin==="unsaved"?"warn":""}">${esc(m.origin)}</span></div>`).join("");
-    $$("#v_pick div").forEach(d=>d.onclick=()=>valDlg(d.dataset.p,ms.find(m=>m.pkg===d.dataset.p)?.main?rel:""));
+    $$("#v_pick div").forEach(d=>d.onclick=()=>valDlg(d.dataset.p,ms.find(m=>m.pkg===d.dataset.p)?.main?rel:"",key));
   }).catch(e=>toast(e.message,"bad"));
 }
-function editDlg(rel){
-  const row=bindings.find(b=>b.rel===rel);
-  api(`/api/members?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(cur)}`).then(ms=>{
-    ask(`<h3>Edit ${esc(row.table)} · ${esc(cur)}</h3>
+function editDlg(rel,key=cur){
+  const row=rowOf(rel,key);
+  api(`/api/members?rel=${encodeURIComponent(rel)}&key=${encodeURIComponent(key)}`).then(ms=>{
+    ask(`<h3>Edit ${esc(row.table)} · ${esc(key)}</h3>
       <div class="help" style="margin:0 0 8px">Click an asset: it is extracted (if needed) and opened in UAssetGUI. Save there, then press Save in the header.</div>
       <div class="pick" id="e_pick" style="max-height:380px"></div>`,[{label:"Close"}]);
     $("#e_pick").innerHTML=ms.map(m=>`<div data-p="${esc(m.pkg)}" ${m.exists?"":'data-missing="1" style="opacity:.45;cursor:default"'}><b>${m.main?"★ ":"&nbsp;&nbsp;&nbsp;"}${esc(m.pkg.split("/").pop())}</b>
@@ -818,12 +834,12 @@ function editDlg(rel){
   }).catch(e=>toast(e.message,"bad"));
 }
 window.addEventListener("focus",()=>refreshChanges());
-async function cloneRowDlg(rel){
-  const row=bindings.find(b=>b.rel===rel);let mode="asset",edited=false,name="";
-  const call=(dry)=>api("/api/clonerow",{rel,key:cur,mode,name:edited?name:"",dry_run:dry});
+async function cloneRowDlg(rel,key=cur){
+  const row=rowOf(rel,key);let mode="asset",edited=false,name="";
+  const call=(dry)=>api("/api/clonerow",{rel,key,mode,name:edited?name:"",dry_run:dry});
   const first=await call(true).catch(e=>{toast(e.message,"bad");return null});if(!first)return;
   mode=first.can_set?"set":"asset";name=first.new_name;
-  ask(`<h3>Clone ${esc(row.table)} for ${esc(cur)}</h3><div class="sub">now: ${esc(first.old)}</div>
+  ask(`<h3>Clone ${esc(row.table)} for ${esc(key)}</h3><div class="sub">now: ${esc(first.old)}</div>
     <label style="display:block;margin:6px 0"><input type="radio" name="cm" value="set" ${first.can_set?"":"disabled"} ${mode==="set"?"checked":""}> Full set - also copy this variant's materials/textures ${first.can_set?"":'<span class="tag">only for customization_data</span>'}</label>
     <label style="display:block;margin:6px 0"><input type="radio" name="cm" value="asset" ${mode==="asset"?"checked":""}> This asset only - keeps using the original's materials/textures</label>
     <label style="display:block;margin:12px 0 4px;color:var(--dim);font-size:12px">New name (same folder; for a full set, only the variant number may differ)</label>
